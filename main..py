@@ -727,6 +727,9 @@ candles_df = pd.DataFrame()  # Global DataFrame to hold candles
 alert_service = AlertService()
 last_candle_start_time = None  # Track last processed candle start time
 
+# ---- NEW GLOBAL VARIABLE to track last sent signal ---
+last_signal = None  
+
 # Fetch historical candles
 def fetch_historical_candles(symbol, resolution, start, end):
     url = f'https://api.india.delta.exchange/v2/history/candles'
@@ -815,7 +818,7 @@ def on_message(ws, message):
             # Run strategy on new candle close
             if last_candle_start_time is not None and candle_start_time != last_candle_start_time:
                 signal = check_ema_crossover_signal(candles_df)
-                if signal:
+                if signal and signal != last_signal:  # Only alert on signal change
                     try:
                         alert_message = (
                             f"🚨 Trade Signal Alert 🚨\n"
@@ -826,6 +829,7 @@ def on_message(ws, message):
                         )
                         alert_service.send_signal_alert(alert_message)
                         print(f"Sent alert: {alert_message}")
+                        last_signal = signal  # Update last signal tracked
                     except Exception as e:
                         print(f"Error sending alert: {e}")
 
