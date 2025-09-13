@@ -158,72 +158,20 @@
 #         return "📉 SELL"
 #     else:
 #         return None
-# import pandas as pd
-# import logging
-
-# # Setup logger for this module
-# logger = logging.getLogger(__name__)
-# logger.setLevel(logging.DEBUG)  # Set to DEBUG to see detailed EMA logs
-
-# # Add console handler if no handlers exist (for standalone testing)
-# if not logger.hasHandlers():
-#     ch = logging.StreamHandler()
-#     ch.setLevel(logging.DEBUG)
-#     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-#     ch.setFormatter(formatter)
-#     logger.addHandler(ch)
-
-# def check_ema_crossover_signal(df, short_period=5, long_period=10):
-#     """
-#     Returns "📈 BUY", "📉 SELL", or None based on EMA crossover.
-#     Expects df with 'close' column indexed by timestamp.
-#     """
-
-#     # Ensure enough data points for accurate EMA calculation
-#     warmup = max(short_period, long_period) * 3
-#     if len(df) < warmup + 2:
-#         return None
-
-#     # Calculate EMAs with adjust=False (standard for trading charts)
-#     df[f'ema_{short_period}'] = df['close'].ewm(span=short_period, adjust=False).mean()
-#     df[f'ema_{long_period}'] = df['close'].ewm(span=long_period, adjust=False).mean()
-
-#     # Get previous and current EMA values
-#     prev_short = df[f'ema_{short_period}'].iloc[-2]
-#     curr_short = df[f'ema_{short_period}'].iloc[-1]
-#     prev_long = df[f'ema_{long_period}'].iloc[-2]
-#     curr_long = df[f'ema_{long_period}'].iloc[-1]
-
-#     # Log EMA values for debugging
-#     logger.debug(
-#         f"Previous EMA {short_period}: {prev_short}, Current EMA {short_period}: {curr_short} \n "
-#         f"Previous EMA {long_period}: {prev_long}, Current EMA {long_period}: {curr_long}"
-#     )
-#     # Determine crossover signal
-#     if prev_short <= prev_long and curr_short > curr_long:
-#         return "📈 BUY"
-#     elif prev_short >= prev_long and curr_short < curr_long:
-#         return "📉 SELL"
-#     else:
-#         return None
-
 import pandas as pd
 import logging
 
-# Setup a named logger for strategy module
-logger = logging.getLogger('strategy')
-logger.setLevel(logging.DEBUG)  # Enables debug logs
+# Setup logger for this module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # Set to DEBUG to see detailed EMA logs
 
-# Do NOT add StreamHandler here if you want logs only in your Telegram bot log files
-# Ensure no duplicate handlers by adding only if none exist - optional
+# Add console handler if no handlers exist (for standalone testing)
 if not logger.hasHandlers():
-    # If you want to test standalone and see console logs, uncomment this block:
-    # ch = logging.StreamHandler()
-    # ch.setLevel(logging.DEBUG)
-    # formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    # ch.setFormatter(formatter)
-    # logger.addHandler(ch)
-    pass
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
 def check_ema_crossover_signal(df, short_period=5, long_period=10):
     """
@@ -231,30 +179,82 @@ def check_ema_crossover_signal(df, short_period=5, long_period=10):
     Expects df with 'close' column indexed by timestamp.
     """
 
-    # Ensure enough data for stable EMA calculation
+    # Ensure enough data points for accurate EMA calculation
     warmup = max(short_period, long_period) * 3
     if len(df) < warmup + 2:
         return None
 
-    # Calculate EMAs, adjust=False for usual trading behavior
+    # Calculate EMAs with adjust=False (standard for trading charts)
     df[f'ema_{short_period}'] = df['close'].ewm(span=short_period, adjust=False).mean()
     df[f'ema_{long_period}'] = df['close'].ewm(span=long_period, adjust=False).mean()
 
+    # Get previous and current EMA values
     prev_short = df[f'ema_{short_period}'].iloc[-2]
     curr_short = df[f'ema_{short_period}'].iloc[-1]
     prev_long = df[f'ema_{long_period}'].iloc[-2]
     curr_long = df[f'ema_{long_period}'].iloc[-1]
 
-    # Unified debug log message
+    # Log EMA values for debugging
     logger.debug(
-        f"Previous EMA {short_period}: {prev_short}, Current EMA {short_period}: {curr_short} | "
+        f"\nPrevious EMA {short_period}: {prev_short}, Current EMA {short_period}: {curr_short}\n"
         f"Previous EMA {long_period}: {prev_long}, Current EMA {long_period}: {curr_long}"
     )
-
-    # Determine the crossover signal
+    # Determine crossover signal
     if prev_short <= prev_long and curr_short > curr_long:
         return "📈 BUY"
     elif prev_short >= prev_long and curr_short < curr_long:
         return "📉 SELL"
     else:
         return None
+
+# import pandas as pd
+# import logging
+
+# # Setup a named logger for strategy module
+# logger = logging.getLogger('strategy')
+# logger.setLevel(logging.DEBUG)  # Enables debug logs
+
+# # Do NOT add StreamHandler here if you want logs only in your Telegram bot log files
+# # Ensure no duplicate handlers by adding only if none exist - optional
+# if not logger.hasHandlers():
+#     # If you want to test standalone and see console logs, uncomment this block:
+#     # ch = logging.StreamHandler()
+#     # ch.setLevel(logging.DEBUG)
+#     # formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+#     # ch.setFormatter(formatter)
+#     # logger.addHandler(ch)
+#     pass
+
+# def check_ema_crossover_signal(df, short_period=5, long_period=10):
+#     """
+#     Returns "📈 BUY", "📉 SELL", or None based on EMA crossover.
+#     Expects df with 'close' column indexed by timestamp.
+#     """
+
+#     # Ensure enough data for stable EMA calculation
+#     warmup = max(short_period, long_period) * 3
+#     if len(df) < warmup + 2:
+#         return None
+
+#     # Calculate EMAs, adjust=False for usual trading behavior
+#     df[f'ema_{short_period}'] = df['close'].ewm(span=short_period, adjust=False).mean()
+#     df[f'ema_{long_period}'] = df['close'].ewm(span=long_period, adjust=False).mean()
+
+#     prev_short = df[f'ema_{short_period}'].iloc[-2]
+#     curr_short = df[f'ema_{short_period}'].iloc[-1]
+#     prev_long = df[f'ema_{long_period}'].iloc[-2]
+#     curr_long = df[f'ema_{long_period}'].iloc[-1]
+
+#     # Unified debug log message
+#     logger.debug(
+#         f"\nPrevious EMA {short_period}: {prev_short}, Current EMA {short_period}: {curr_short} \n"
+#         f"Previous EMA {long_period}: {prev_long}, Current EMA {long_period}: {curr_long}"
+#     )
+
+#     # Determine the crossover signal
+#     if prev_short <= prev_long and curr_short > curr_long:
+#         return "📈 BUY"
+#     elif prev_short >= prev_long and curr_short < curr_long:
+#         return "📉 SELL"
+#     else:
+#         return None
