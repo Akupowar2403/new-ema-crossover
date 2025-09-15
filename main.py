@@ -727,7 +727,7 @@ candles_df = pd.DataFrame()  # Global DataFrame to hold candles
 last_candle_start_time = None  # Track last processed candle start time
 
 # ---- NEW GLOBAL VARIABLE to track last sent signal ---
-# last_signal = None  
+last_signal = None  
 
 # Fetch historical candles
 def fetch_historical_candles(symbol, resolution, start, end):
@@ -788,7 +788,6 @@ def subscribe(ws, channel, symbols):
 alert_service = AlertService()
 
 def on_message(ws, message):
-    # The 'last_signal' variable is now included in the global declaration
     global candles_df, last_candle_start_time, last_signal
     msg = json.loads(message)
 
@@ -817,10 +816,10 @@ def on_message(ws, message):
                 candles_df = pd.concat([candles_df, new_df])
                 candles_df.sort_index(inplace=True)
 
-            # Run strategy on new candle close
+            # Run strategy only when a candle completes (on new candle start)
             if last_candle_start_time is not None and candle_start_time != last_candle_start_time:
                 signal = check_ema_crossover_signal(candles_df)
-                if signal and signal != last_signal:  # Only alert on signal change
+                if signal and signal != last_signal:
                     try:
                         alert_message = (
                             f"🚨 Trade Signal Alert 🚨\n"
@@ -829,17 +828,20 @@ def on_message(ws, message):
                             f"Resolution: {resolution}\n"
                             f"Signal Triggered: {signal}"
                         )
-                        # alert_service.send_signal_alert(alert_message)
+                        alert_service.send_signal_alert(alert_message)
                         print(f"Sent alert: {alert_message}")
-                        last_signal = signal  # Update last signal tracked
+                        last_signal = signal
                     except Exception as e:
                         print(f"Error sending alert: {e}")
+                elif not signal:
+                    last_signal = None  # Reset so next actual crossover is caught
 
             last_candle_start_time = candle_start_time
         else:
             print("candlestick message missing candle_start_time:", msg)
     else:
         print(msg)
+
 
 def on_error(ws, error):
     print(f"WebSocket error: {error}")
