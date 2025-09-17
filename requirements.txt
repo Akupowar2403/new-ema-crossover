@@ -7,3 +7,6 @@ python-dotenv
 python-telegram-bot
 flask
 delta-rest-client
+"httpx[http2]" 
+aiohttp
+redis

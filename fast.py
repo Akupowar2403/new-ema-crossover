@@ -1,15 +1,19 @@
 import json
-from pathlib import Path
 import time
+import asyncio
+from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from helpers import fetch_historical_candles, get_historical_ema_crossovers, check_ema_crossover_signal
+
+# Import our helper functions and the new config file
+import helpers
+import config
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Set specific origins for production!
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -20,95 +24,99 @@ WATCHLIST_FILE = Path("watchlist.json")
 def load_watchlist():
     if not WATCHLIST_FILE.exists():
         return []
-    with open(WATCHLIST_FILE, "r") as f:
+    with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-    if isinstance(data, list):
-        return data
-    return data.get("symbols", []) if isinstance(data, dict) else []
+        if isinstance(data, list):
+            return data
+        else:
+            return data.get("symbols", [])
 
 @app.get("/screener_data")
-def screener_data():
+async def screener_data():
     symbols = load_watchlist()
-    response = {"crypto": [], "forex": [], "stocks": []}
-    timeframes = ["15m", "1h", "4h", "1d"]
-
     now = int(time.time())
-    longest_period = 20
-    warmup_bars = longest_period * 3 + 2  # 62 bars
-    seconds_per_bar = {
-        "15m": 15 * 60,
-        "1h": 60 * 60,
-        "4h": 4 * 60 * 60,
-        "1d": 24 * 60 * 60
-    }
+    
+    warmup_bars = (config.LONG_EMA_PERIOD * config.WARMUP_BARS_FACTOR) + config.WARMUP_BARS_BUFFER
 
+    tasks, task_metadata = [], []
     for symbol in symbols:
-        timeframes_signals = {}
-        for tf in timeframes:
-            bar_seconds = seconds_per_bar.get(tf, 60 * 60)
-            start_time = now - warmup_bars * bar_seconds
-            end_time = now
+        for tf in config.TIMEFRAMES:
+            bar_seconds = config.SECONDS_PER_BAR.get(tf, 3600)
+            start_time = now - (warmup_bars * bar_seconds)
+            task = helpers.fetch_historical_candles(symbol, tf, start=start_time, end=now)
+            tasks.append(task)
+            task_metadata.append({"symbol": symbol, "tf": tf})
 
-            df = fetch_historical_candles(symbol, tf, start=start_time, end=end_time)
-            if df.empty:
-                timeframes_signals[tf] = {"status": "N/A", "bars_since": None}
-                continue
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            signal = check_ema_crossover_signal(df)
+    symbol_results = {symbol: {} for symbol in symbols}
+    for i, res_df in enumerate(results):
+        meta = task_metadata[i]
+        symbol, tf = meta["symbol"], meta["tf"]
+        status, bars_since = "N/A", None
+
+        if not isinstance(res_df, Exception) and not res_df.empty:
+            signal = helpers.check_ema_crossover_signal(
+                df=res_df,
+                short_period=config.SHORT_EMA_PERIOD,
+                long_period=config.LONG_EMA_PERIOD
+            )
+            
+            bars_since = helpers.get_bars_since_last_signal(res_df)
+
             if signal == "BUY":
                 status = "Bullish"
             elif signal == "SELL":
                 status = "Bearish"
             else:
                 status = "Neutral"
-            bars_since = 0 if status in ["Bullish", "Bearish"] else None
-            timeframes_signals[tf] = {"status": status, "bars_since": bars_since}
+        
+        symbol_results[symbol][tf] = {"status": status, "bars_since": bars_since}
 
-        symbol_data = {"name": symbol, "timeframes": timeframes_signals}
-        response["crypto"].append(symbol_data)
+    response_data = [
+        {"name": symbol, "timeframes": tf_signals}
+        for symbol, tf_signals in symbol_results.items()
+    ]
+    return {"crypto": response_data}
 
-    return response
-
+# --- FIX APPLIED HERE ---
 @app.get("/historical-crossovers")
-def historical_crossovers(symbol: str = Query(...), timeframe: str = Query(...)):
+async def historical_crossovers(symbol: str = Query(...), timeframe: str = Query(...)):
     now = int(time.time())
-    longest_period = 20
-    warmup_bars = longest_period * 3 + 2
-    seconds_per_bar = {
-        "15m": 15 * 60,
-        "1h": 60 * 60,
-        "4h": 4 * 60 * 60,
-        "1d": 24 * 60 * 60
-    }
-    bar_seconds = seconds_per_bar.get(timeframe, 60 * 60)
-    start = now - warmup_bars * bar_seconds
-    end = now
-
-    df = fetch_historical_candles(symbol, timeframe, start=start, end=end)
+    warmup_bars = (config.LONG_EMA_PERIOD * config.WARMUP_BARS_FACTOR) + config.WARMUP_BARS_BUFFER
+    bar_seconds = config.SECONDS_PER_BAR.get(timeframe, 3600)
+    start_time = now - (warmup_bars * bar_seconds)
+    
+    # We must 'await' the result of an async function
+    df = await helpers.fetch_historical_candles(symbol, timeframe, start=start_time, end=now)
+    
     if df.empty:
         return {"crossovers": []}
 
-    crossovers = get_historical_ema_crossovers(df, symbol=symbol, timeframe=timeframe)
+    crossovers = helpers.get_historical_ema_crossovers(
+        df, 
+        symbol=symbol, 
+        timeframe=timeframe,
+        short_period=config.SHORT_EMA_PERIOD,
+        long_period=config.LONG_EMA_PERIOD,
+        volume_threshold_factor=config.VOLUME_THRESHOLD_FACTOR,
+        cooldown_minutes=config.COOLDOWN_MINUTES
+    )
     return {"crossovers": crossovers}
 
+# --- FIX APPLIED HERE ---
 @app.get("/latest-signal")
-def latest_signal(symbol: str = Query(...), timeframe: str = Query(...)):
+async def latest_signal(symbol: str = Query(...), timeframe: str = Query(...)):
     now = int(time.time())
-    longest_period = 20
-    warmup_bars = longest_period * 3 + 2
-    seconds_per_bar = {
-        "15m": 15 * 60,
-        "1h": 60 * 60,
-        "4h": 4 * 60 * 60,
-        "1d": 24 * 60 * 60
-    }
-    bar_seconds = seconds_per_bar.get(timeframe, 60 * 60)
-    start = now - warmup_bars * bar_seconds
-    end = now
+    warmup_bars = (config.LONG_EMA_PERIOD * config.WARMUP_BARS_FACTOR) + config.WARMUP_BARS_BUFFER
+    bar_seconds = config.SECONDS_PER_BAR.get(timeframe, 3600)
+    start_time = now - (warmup_bars * bar_seconds)
+    
+    # We must 'await' the result of an async function
+    df = await helpers.fetch_historical_candles(symbol, timeframe, start=start_time, end=now)
 
-    df = fetch_historical_candles(symbol, timeframe, start=start, end=end)
     if df.empty:
         return {"signal": None}
 
-    signal = check_ema_crossover_signal(df)
+    signal = helpers.check_ema_crossover_signal(df, short_period=config.SHORT_EMA_PERIOD, long_period=config.LONG_EMA_PERIOD)
     return {"signal": signal}

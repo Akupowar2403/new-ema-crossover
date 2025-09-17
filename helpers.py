@@ -1,45 +1,46 @@
 import time
-import httpx  # Import httpx instead of requests
+import httpx
 import pandas as pd
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
+import redis
 
+# --- Basic Setup ---
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Create a single, reusable AsyncClient. This is much more efficient than creating a new one for every request.
-# It manages a connection pool internally.
+# --- Redis Connection ---
+# Establishes a connection to the Redis server.
+# decode_responses=True automatically converts Redis's binary responses into Python strings.
+try:
+    redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+    redis_client.ping()
+    logger.info("Successfully connected to Redis.")
+except redis.exceptions.ConnectionError as e:
+    logger.critical(f"Could not connect to Redis. Cooldown logic will be disabled. Error: {e}")
+    redis_client = None
+
+# --- Reusable HTTP Client ---
+# Creates a single, reusable AsyncClient for efficient connection pooling.
 client = httpx.AsyncClient()
 
-# The function is now defined with "async def"
-async def fetch_historical_candles(symbol, resolution, start, end):
+async def fetch_historical_candles(symbol: str, resolution: str, start: int, end: int) -> pd.DataFrame:
     """
-    Fetches and cleans historical candles asynchronously.
-    Returns cleaned pandas DataFrame or empty DataFrame on error/no data.
+    Fetches and cleans historical candles asynchronously using httpx.
+    - Removes zero/negative volume and price rows.
+    - Removes extreme price outliers (flash wicks).
+    Returns a cleaned pandas DataFrame or an empty one on error.
     """
     url = 'https://api.india.delta.exchange/v2/history/candles'
-    params = {
-        'symbol': symbol,
-        'resolution': resolution,
-        'start': start,
-        'end': end
-    }
+    params = {'symbol': symbol, 'resolution': resolution, 'start': start, 'end': end}
     headers = {'Accept': 'application/json'}
 
     try:
-        # We use "await" to pause the function here until the network request is complete,
-        # allowing other code to run in the meantime.
         response = await client.get(url, params=params, headers=headers, timeout=10.0)
-        response.raise_for_status()  # Still good practice to check for HTTP errors (4xx or 5xx)
+        response.raise_for_status()
         data = response.json().get('result', [])
-    except httpx.HTTPStatusError as exc:
-        logger.error(f"HTTP error fetching {symbol} {resolution}: {exc}")
-        return pd.DataFrame()
-    except httpx.RequestError as exc:
-        logger.error(f"Network error fetching {symbol} {resolution}: {exc}")
-        return pd.DataFrame()
-    except Exception as exc:
-        logger.error(f"An unexpected error occurred for {symbol} {resolution}: {exc}")
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        logger.error(f"Error fetching candles for {symbol} {resolution}: {exc}")
         return pd.DataFrame()
 
     if not data:
@@ -47,92 +48,111 @@ async def fetch_historical_candles(symbol, resolution, start, end):
         return pd.DataFrame()
 
     df = pd.DataFrame(data, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
-    # The rest of your data cleaning logic is great and remains the same!
     df.set_index('time', inplace=True)
+
+    # --- Data Cleaning (Vectorized) ---
+    price_cols = ['open', 'high', 'low', 'close']
     df = df[df['volume'] > 0]
-    for col in ['open', 'high', 'low', 'close']:
-        df = df[df[col] > 0]
-        median = df[col].median()
-        mad = (df[col] - median).abs().median()
-        if mad > 0:
-            df = df[((df[col] - median).abs()) < (10 * mad)]
-            
+    df = df[(df[price_cols] > 0).all(axis=1)] # Ensure all prices are positive
+
+    # Outlier removal loop (MAD filter)
+    for col in price_cols:
+        if not df.empty: # Prevent errors on an empty dataframe
+            median = df[col].median()
+            mad = (df[col] - median).abs().median()
+            # Only filter if mad is a positive, non-zero number
+            if mad > 0:
+                df = df[(df[col] - median).abs() < (10 * mad)]
+    
     return df
 
-# The other functions (get_historical_ema_crossovers, check_ema_crossover_signal)
-# don't do any I/O, so they don't need to be async. They can stay as they are.
-# ... (paste your other helper functions here) ...
-
-
-# Store last crossover timestamps for cooldown (symbol-timeframe keys)
-last_crossover_time = {}
-
-def get_historical_ema_crossovers(df, symbol="", timeframe="", short_period=9, long_period=20, volume_threshold_factor=1.0, cooldown_minutes=30):
+def get_historical_ema_crossovers(df: pd.DataFrame, symbol: str, timeframe: str, short_period=9, long_period=20, volume_threshold_factor=1.0, cooldown_minutes=30) -> list:
+    """
+    Finds the first valid EMA crossover using fast, vectorized Pandas operations
+    and checks against a Redis-based cooldown.
+    """
     warmup = max(short_period, long_period) * 3
     if len(df) < warmup + 2:
         return []
+    if not redis_client:
+        logger.warning("Redis client not available. Cannot check for crossovers.")
+        return []
 
-    df[f'ema_{short_period}'] = df['close'].ewm(span=short_period, adjust=False).mean()
-    df[f'ema_{long_period}'] = df['close'].ewm(span=long_period, adjust=False).mean()
-
+    # --- Step 1: Calculate Indicators (Vectorized) ---
+    df['ema_short'] = df['close'].ewm(span=short_period, adjust=False).mean()
+    df['ema_long'] = df['close'].ewm(span=long_period, adjust=False).mean()
     df['signal'] = 0
-    df.loc[df[f'ema_{short_period}'] > df[f'ema_{long_period}'], 'signal'] = 1
-    df.loc[df[f'ema_{short_period}'] < df[f'ema_{long_period}'], 'signal'] = -1
-
+    df.loc[df['ema_short'] > df['ema_long'], 'signal'] = 1
+    df.loc[df['ema_short'] < df['ema_long'], 'signal'] = -1
     df['crossover'] = df['signal'].diff()
 
-    crossovers = []
-    now = datetime.utcnow()
+    # --- Step 2: Pre-filter Crossovers and Volume (Vectorized) ---
+    crossover_points = df[df['crossover'] != 0].copy()
+    if crossover_points.empty:
+        return []
 
-    for idx, row in df.iterrows():
-        if row['crossover'] != 0:
-            # Volume filter on this crossover's candle
-            avg_volume = df['volume'].rolling(window=20).mean().loc[idx]
-            if row['volume'] < volume_threshold_factor * avg_volume:
-                continue  # Skip low volume crossovers
+    df['avg_volume'] = df['volume'].rolling(window=20).mean()
+    volume_mask = crossover_points['volume'] >= (volume_threshold_factor * df['avg_volume'].loc[crossover_points.index])
+    valid_candidates = crossover_points[volume_mask]
 
-            # Cooldown check
-            key = f"{symbol}-{timeframe}"
-            last_time = last_crossover_time.get(key)
-            timestamp = datetime.utcfromtimestamp(idx)
-            if last_time and (timestamp - last_time) < timedelta(minutes=cooldown_minutes):
-                continue  # Skip within cooldown period
+    # --- Step 3: Final Redis Check (Small Loop on Candidates) ---
+    final_crossovers = []
+    for idx, row in valid_candidates.iterrows():
+        redis_key = f"cooldown:{symbol}-{timeframe}"
+        if redis_client.exists(redis_key):
+            continue
 
-            crossovers.append({
-                "timestamp": idx,
-                "type": "bullish" if row['crossover'] > 0 else "bearish",
-                "close": row['close']
-            })
+        final_crossovers.append({
+            "timestamp": idx,
+            "type": "bullish" if row['crossover'] > 0 else "bearish",
+            "close": row['close']
+        })
+        
+        cooldown_seconds = cooldown_minutes * 60
+        redis_client.set(redis_key, "active", ex=cooldown_seconds)
+        break # Only signal the very first valid crossover
 
-            last_crossover_time[key] = timestamp
+    return final_crossovers
 
-    return crossovers
-
-
-def check_ema_crossover_signal(df, short_period=9, long_period=20):
+def check_ema_crossover_signal(df: pd.DataFrame, short_period=9, long_period=20) -> str | None:
     """
-    Checks for EMA crossovers using only closed candles and enough historical bars.
+    Checks for a fresh EMA crossover on the last two closed candles.
     Returns "BUY", "SELL", or None.
-    - Uses bar[-2] and bar[-1] (last two closed bars)
-    - Requires at least 3x longest EMA period as warmup
     """
     warmup = max(short_period, long_period) * 3
     if len(df) < warmup + 2:
-        return None  # not enough data for reliable EMA
+        return None
 
-    # Calculate EMAs
-    df[f'ema_{short_period}'] = df['close'].ewm(span=short_period, adjust=False).mean()
-    df[f'ema_{long_period}'] = df['close'].ewm(span=long_period, adjust=False).mean()
+    df['ema_short'] = df['close'].ewm(span=short_period, adjust=False).mean()
+    df['ema_long'] = df['close'].ewm(span=long_period, adjust=False).mean()
 
-    # Only use last two *closed* candles (not in-progress candle)
-    prev_short = df[f'ema_{short_period}'].iloc[-3]
-    prev_long = df[f'ema_{long_period}'].iloc[-3]
-    curr_short = df[f'ema_{short_period}'].iloc[-2]
-    curr_long = df[f'ema_{long_period}'].iloc[-2]
+    # Use the last three data points to check the last two *closed* candles
+    # df.iloc[-1] is the current, incomplete bar
+    # df.iloc[-2] is the most recently closed bar
+    # df.iloc[-3] is the bar before that
+    prev_short, prev_long = df[['ema_short', 'ema_long']].iloc[-3]
+    curr_short, curr_long = df[['ema_short', 'ema_long']].iloc[-2]
 
     if prev_short <= prev_long and curr_short > curr_long:
         return "BUY"
     elif prev_short >= prev_long and curr_short < curr_long:
         return "SELL"
+    
     return None
 
+def get_bars_since_last_signal(df: pd.DataFrame) -> int | None:
+    """
+    Calculates the number of bars since the last crossover event.
+    """
+    if 'crossover' not in df.columns or df[df['crossover'] != 0].empty:
+        return None
+    
+    # Find the index (timestamp) of the last row where a crossover occurred
+    last_crossover_index = df[df['crossover'] != 0].index[-1]
+    
+    # Get the integer position of that index
+    last_crossover_pos = df.index.get_loc(last_crossover_index)
+    
+    # Calculate bars since: total bars minus the position of the last crossover minus 1
+    bars_since = len(df) - last_crossover_pos - 1
+    return bars_since
