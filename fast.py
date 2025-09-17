@@ -4,10 +4,15 @@ import asyncio
 from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
 
 # Import our helper functions and the new config file
 import helpers
 import config
+
+class SymbolRequest(BaseModel):
+    symbol: str
 
 app = FastAPI()
 
@@ -31,15 +36,19 @@ def load_watchlist():
         else:
             return data.get("symbols", [])
 
-@app.get("/screener_data")
-async def screener_data():
-    symbols = load_watchlist()
-    now = int(time.time())
+class ScreenerRequest(BaseModel):
+    symbols: Optional[List[str]] = None
     
+@app.post("/screener_data")
+async def screener_data(request: ScreenerRequest):
+    # Use the provided symbols, otherwise fall back to the watchlist file
+    symbols_to_scan = request.symbols if request.symbols is not None else load_watchlist()
+    
+    now = int(time.time())
     warmup_bars = (config.LONG_EMA_PERIOD * config.WARMUP_BARS_FACTOR) + config.WARMUP_BARS_BUFFER
 
     tasks, task_metadata = [], []
-    for symbol in symbols:
+    for symbol in symbols_to_scan:
         for tf in config.TIMEFRAMES:
             bar_seconds = config.SECONDS_PER_BAR.get(tf, 3600)
             start_time = now - (warmup_bars * bar_seconds)
@@ -49,7 +58,7 @@ async def screener_data():
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    symbol_results = {symbol: {} for symbol in symbols}
+    symbol_results = {symbol: {} for symbol in symbols_to_scan}
     for i, res_df in enumerate(results):
         meta = task_metadata[i]
         symbol, tf = meta["symbol"], meta["tf"]
@@ -61,15 +70,8 @@ async def screener_data():
                 short_period=config.SHORT_EMA_PERIOD,
                 long_period=config.LONG_EMA_PERIOD
             )
-            
             bars_since = helpers.get_bars_since_last_signal(res_df)
-
-            if signal == "BUY":
-                status = "Bullish"
-            elif signal == "SELL":
-                status = "Bearish"
-            else:
-                status = "Neutral"
+            status = "Bullish" if signal == "BUY" else "Bearish" if signal == "SELL" else "Neutral"
         
         symbol_results[symbol][tf] = {"status": status, "bars_since": bars_since}
 
@@ -120,3 +122,31 @@ async def latest_signal(symbol: str = Query(...), timeframe: str = Query(...)):
 
     signal = helpers.check_ema_crossover_signal(df, short_period=config.SHORT_EMA_PERIOD, long_period=config.LONG_EMA_PERIOD)
     return {"signal": signal}
+
+@app.get("/all-symbols")
+async def get_all_symbols():
+    """
+    Returns a cached list of all available symbols from the exchange,
+    for use in frontend autocomplete features.
+    """
+    symbols = await helpers.get_all_symbols_cached()
+    return {"symbols": symbols}
+
+# --- Watchlist Management Endpoints ---
+
+@app.get("/watchlist")
+async def get_watchlist():
+    """Gets the current user watchlist."""
+    return {"symbols": helpers.get_current_watchlist()}
+
+@app.post("/watchlist")
+async def add_to_watchlist(request: SymbolRequest):
+    """Adds a symbol to the watchlist."""
+    updated_watchlist = helpers.add_symbol_to_watchlist(request.symbol)
+    return {"status": "success", "watchlist": updated_watchlist}
+
+@app.delete("/watchlist/{symbol_name}")
+async def delete_from_watchlist(symbol_name: str):
+    """Deletes a symbol from the watchlist."""
+    updated_watchlist = helpers.remove_symbol_from_watchlist(symbol_name)
+    return {"status": "success", "watchlist": updated_watchlist}

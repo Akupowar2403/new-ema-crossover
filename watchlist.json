@@ -1,12 +1,14 @@
-[
-  "WLFIUSD",
-  "AIOUSD",
-  "ZORAUSD",
-  "TOWNSUSD",
-  "PROVEUSD",
-  "ENSUSD",
-  "SKLUSD",
-  "AINUSD",
-  "SAHARAUSD",
-  "BTCUSD"
-]
+{
+  "symbols": [
+    "AINUSD",
+    "AIOUSD",
+    "BTCUSD",
+    "ENSUSD",
+    "PROVEUSD",
+    "SAHARAUSD",
+    "SKLUSD",
+    "TOWNSUSD",
+    "WLFIUSD",
+    "ZORAUSD"
+  ]
+}

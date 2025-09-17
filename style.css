@@ -172,7 +172,7 @@ table tbody tr:nth-child(even) {
 #crossover-results {
     margin-top: 20px;
 }
-#search-input, #search-forex, #search-stocks {
+#search-input { /* Simplified selector */
     margin-bottom: 10px;
     width: 200px;
 }
@@ -181,4 +181,50 @@ table tbody tr:nth-child(even) {
 }
 .spinner-container {
     display: none; /* Controlled by JS */
+}
+
+/* Watchlist Section Styling */
+.watchlist-form {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.watchlist-form input {
+    flex-grow: 1;
+    padding: 8px;
+    background-color: var(--background-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: 4px;
+}
+
+#watchlist-list {
+    list-style-type: none;
+    padding: 0;
+}
+
+#watchlist-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background-color: var(--background-tertiary);
+    border-bottom: 1px solid var(--border-color);
+    border-radius: 4px;
+    margin-bottom: 5px;
+}
+
+.remove-symbol-btn {
+    background-color: var(--bearish-color);
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.remove-symbol-btn:hover {
+    opacity: 0.8;
 }

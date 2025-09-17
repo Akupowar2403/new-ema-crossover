@@ -10,7 +10,7 @@
 <body>
 
     <header>
-        <h1>📈 Multi-Asset 9 & 20 EMA Crossover Screener</h1>
+        <h1>📈 EMA Crossover Screener & Watchlist</h1>
         <p>Last Updated: <span id="last-updated">Never</span></p>
     </header>
 
@@ -18,8 +18,7 @@
 
         <section class="controls">
             <label for="symbol-select">Symbol:</label>
-            <select id="symbol-select">
-                </select>
+            <select id="symbol-select"></select>
             <label for="timeframe-select">Timeframe:</label>
             <select id="timeframe-select">
                 <option value="15m">15m</option>
@@ -33,30 +32,25 @@
         <section id="crossover-results"></section>
 
         <nav class="tabs">
-            <button class="tab-link active" data-tab="Crypto">Crypto</button>
-            <button class="tab-link" data-tab="Forex">Forex</button>
-            <button class="tab-link" data-tab="Stocks">Indian Stocks & Indices</button>
+            <button class="tab-link active" data-tab="Crypto">Crypto Screener</button>
+            <button class="tab-link" data-tab="Watchlist">My Watchlist</button>
         </nav>
 
         <section id="Crypto" class="tab-content active">
             <h2>Crypto Pairs (Delta Exchange)</h2>
             <input id="search-input" placeholder="Search symbol..." />
-            <table id="crypto-table">
-                </table>
+            <table id="crypto-table"></table>
         </section>
 
-        <section id="Forex" class="tab-content">
-            <h2>Forex Pairs</h2>
-            <input id="search-forex" placeholder="Search symbol..." />
-            <table id="forex-table">
-                </table>
-        </section>
-
-        <section id="Stocks" class="tab-content">
-            <h2>Indian Stocks & Indices</h2>
-            <input id="search-stocks" placeholder="Search symbol..." />
-            <table id="stocks-table">
-                </table>
+        <section id="Watchlist" class="tab-content">
+            <h2>Watchlist Management</h2>
+            <div class="watchlist-form">
+                <input id="add-symbol-input" type="text" placeholder="Enter symbol to add (e.g., BTCUSD)">
+                <button id="add-symbol-button">Add to Watchlist</button>
+            </div>
+            <ul id="watchlist-list">
+                <li>Loading watchlist...</li>
+            </ul>
         </section>
         
         <section class="alerts-log">

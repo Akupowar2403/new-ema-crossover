@@ -2,15 +2,25 @@
 const API_BASE_URL = 'http://127.0.0.1:8000';
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 const TIME_FRAMES = ["15m", "1h", "4h", "1d"];
-let previousSignals = {}; // Stores previous signals to detect new alerts
+let previousSignals = {};
+let masterSymbolList = []; // Cache for autocomplete
 
 // --- CORE DATA FUNCTIONS ---
 
-async function fetchScreenerData() {
+// UPDATED: Now accepts a list of symbols to fetch
+async function fetchScreenerData(symbols) {
+    if (!symbols || symbols.length === 0) {
+        populateTable('crypto-table', []); // Clear the table if watchlist is empty
+        return null;
+    }
     showError('');
     showLoadingSpinner(true);
     try {
-        const response = await fetch(`${API_BASE_URL}/screener_data`);
+        const response = await fetch(`${API_BASE_URL}/screener_data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbols: symbols }),
+        });
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         return await response.json();
     } catch (error) {
@@ -19,6 +29,18 @@ async function fetchScreenerData() {
         return null;
     } finally {
         showLoadingSpinner(false);
+    }
+}
+
+async function fetchAllSymbols() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/all-symbols`);
+        if (!response.ok) throw new Error('Failed to fetch all symbols');
+        const data = await response.json();
+        masterSymbolList = data.symbols || [];
+    } catch (error) {
+        console.error(error);
+        showError(error.message);
     }
 }
 
@@ -36,12 +58,56 @@ async function fetchHistoricalCrossovers(symbol, timeframe) {
     }
 }
 
+async function fetchWatchlist() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/watchlist`);
+        if (!response.ok) throw new Error('Failed to fetch watchlist');
+        const data = await response.json();
+        return data.symbols || [];
+    } catch (error) {
+        console.error(error);
+        showError(error.message);
+        return [];
+    }
+}
+
+async function addSymbolToWatchlist(symbol) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/watchlist`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol: symbol }),
+        });
+        if (!response.ok) throw new Error('Failed to add symbol');
+        const data = await response.json();
+        return data.watchlist || [];
+    } catch (error) {
+        console.error(error);
+        showError(error.message);
+        return null;
+    }
+}
+
+async function removeSymbolFromWatchlist(symbol) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/watchlist/${symbol}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) throw new Error('Failed to remove symbol');
+        const data = await response.json();
+        return data.watchlist || [];
+    } catch (error) {
+        console.error(error);
+        showError(error.message);
+        return null;
+    }
+}
+
+
 // --- UI POPULATION & UPDATE FUNCTIONS ---
 
 function populateAllTables(data) {
     populateTable('crypto-table', data.crypto || []);
-    populateTable('forex-table', data.forex || []);
-    populateTable('stocks-table', data.stocks || []);
 }
 
 function populateTable(tableId, assetsData) {
@@ -60,7 +126,8 @@ function populateTable(tableId, assetsData) {
     const fragment = document.createDocumentFragment();
     assetsData.forEach(asset => {
         const tr = document.createElement('tr');
-        let rowContent = `<td class="asset-name">${asset.name}</td>`;
+        // UPDATED: Added a class and data-attribute for the click-to-add feature
+        let rowContent = `<td class="asset-name clickable" data-symbol="${asset.name}" title="Add ${asset.name} to Watchlist">${asset.name} ➕</td>`;
         TIME_FRAMES.forEach(tf => {
             const signal = asset.timeframes?.[tf];
             if (signal) {
@@ -107,10 +174,28 @@ function displayCrossovers(crossovers) {
     container.innerHTML = html;
 }
 
+function renderWatchlist(symbols) {
+    const list = document.getElementById('watchlist-list');
+    list.innerHTML = '';
+    if (symbols.length === 0) {
+        list.innerHTML = '<li>Your watchlist is empty. Add a symbol above.</li>';
+        return;
+    }
+    symbols.forEach(symbol => {
+        const li = document.createElement('li');
+        li.textContent = symbol;
+        const removeBtn = document.createElement('button');
+        removeBtn.textContent = 'Remove';
+        removeBtn.className = 'remove-symbol-btn';
+        removeBtn.dataset.symbol = symbol;
+        li.appendChild(removeBtn);
+        list.appendChild(li);
+    });
+}
+
 // --- UI HELPER & EVENT FUNCTIONS ---
 
 function showLoadingSpinner(show) { document.getElementById('loading-spinner').style.display = show ? 'block' : 'none'; }
-
 function showError(message) {
     const errorDiv = document.getElementById('error-message');
     errorDiv.textContent = message || '';
@@ -155,25 +240,32 @@ function addSearchFilter(inputId, tableId) {
 
 // --- INITIALIZATION ---
 
+// UPDATED: Now fetches watchlist first, then fetches screener data for that list.
 async function runDataRefreshCycle() {
-    const data = await fetchScreenerData();
-    if (data) {
-        populateAllTables(data);
+    const watchlist = await fetchWatchlist();
+    if (watchlist === null) return; // Stop if there was an error
+    
+    // Always render the latest watchlist
+    renderWatchlist(watchlist);
+
+    // Now, fetch screener data ONLY for the symbols in our watchlist
+    const screenerData = await fetchScreenerData(watchlist);
+    if (screenerData) {
+        populateAllTables(screenerData);
         document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
-        if(document.getElementById('symbol-select').options.length === 0) {
-            populateSymbolDropdown(data.crypto);
-        }
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    runDataRefreshCycle();
+document.addEventListener('DOMContentLoaded', async () => {
+    // Initial data load for everything
+    fetchAllSymbols(); // For autocomplete
+    await runDataRefreshCycle(); // Initial screener run based on watchlist
+
+    // Set up auto-refresh
     setInterval(runDataRefreshCycle, REFRESH_INTERVAL_MS);
 
     // Set up event listeners
     addSearchFilter('search-input', 'crypto-table');
-    addSearchFilter('search-forex', 'forex-table');
-    addSearchFilter('search-stocks', 'stocks-table');
     
     document.getElementById('fetch-crossovers').addEventListener('click', async () => {
         const symbol = document.getElementById('symbol-select').value;
@@ -184,16 +276,50 @@ document.addEventListener('DOMContentLoaded', () => {
         displayCrossovers(crossovers);
     });
 
-    // This new listener handles all tab clicks efficiently
     document.querySelector('.tabs').addEventListener('click', (e) => {
         if (e.target.matches('.tab-link')) {
             const tabName = e.target.dataset.tab;
-            
             document.querySelectorAll(".tab-content").forEach(tab => tab.classList.remove("active"));
             document.querySelectorAll(".tab-link").forEach(link => link.classList.remove("active"));
-            
             document.getElementById(tabName).classList.add("active");
-e.target.classList.add("active");
+            e.target.classList.add("active");
+        }
+    });
+
+    document.getElementById('add-symbol-button').addEventListener('click', async () => {
+        const input = document.getElementById('add-symbol-input');
+        const symbol = input.value.trim().toUpperCase();
+        if (symbol) {
+            const updatedWatchlist = await addSymbolToWatchlist(symbol);
+            if (updatedWatchlist) {
+                renderWatchlist(updatedWatchlist);
+                input.value = '';
+                await runDataRefreshCycle(); // Refresh screener with new list
+            }
+        }
+    });
+
+    document.getElementById('watchlist-list').addEventListener('click', async (e) => {
+        if (e.target.matches('.remove-symbol-btn')) {
+            const symbol = e.target.dataset.symbol;
+            const updatedWatchlist = await removeSymbolFromWatchlist(symbol);
+            if (updatedWatchlist) {
+                renderWatchlist(updatedWatchlist);
+                await runDataRefreshCycle(); // Refresh screener with new list
+            }
+        }
+    });
+
+    // NEW: Event listener for click-to-add on the main screener table (using a placeholder for now)
+    document.getElementById('crypto-table').addEventListener('click', async (e) => {
+        if (e.target.matches('.asset-name.clickable')) {
+            const symbol = e.target.dataset.symbol;
+            const updatedWatchlist = await addSymbolToWatchlist(symbol);
+            if (updatedWatchlist) {
+                renderWatchlist(updatedWatchlist);
+                // No need to refresh the screener, as the symbol is already there
+                alert(`${symbol} added to watchlist!`); // Simple feedback
+            }
         }
     });
 });

@@ -4,6 +4,11 @@ import pandas as pd
 import logging
 from datetime import datetime
 import redis
+import json
+
+from pathlib import Path
+
+WATCHLIST_FILE = Path("watchlist.json")
 
 # --- Basic Setup ---
 logger = logging.getLogger(__name__)
@@ -156,3 +161,95 @@ def get_bars_since_last_signal(df: pd.DataFrame) -> int | None:
     # Calculate bars since: total bars minus the position of the last crossover minus 1
     bars_since = len(df) - last_crossover_pos - 1
     return bars_since
+
+# --- All Symbols Fetching & Caching ---
+
+# Simple in-memory cache to hold the master list of symbols
+_all_symbols_cache = {
+    "symbols": [],
+    "timestamp": 0
+}
+CACHE_DURATION_SECONDS = 4 * 60 * 60 # Cache for 4 hours
+
+async def _fetch_all_symbols_from_api():
+    """
+    Fetches all product symbols from Delta Exchange API asynchronously.
+    Excludes options ('C-', 'P-') and MOVE contracts ('MV-').
+    """
+    url = "https://api.india.delta.exchange/v2/products"
+    try:
+        response = await client.get(url, headers={'Accept': 'application/json'}, timeout=10.0)
+        response.raise_for_status()
+        products = response.json().get('result', [])
+        
+        symbols = [
+            p['symbol'] for p in products
+            if not (p['symbol'].startswith(('C-', 'P-', 'MV-')))
+        ]
+        return symbols
+    except Exception as exc:
+        logger.error(f"Error fetching all symbols from API: {exc}")
+        return []
+
+async def get_all_symbols_cached():
+    """
+    Returns a list of all symbols, using a time-based cache to avoid
+    hitting the exchange API on every request.
+    """
+    now = time.time()
+    is_cache_stale = (now - _all_symbols_cache["timestamp"]) > CACHE_DURATION_SECONDS
+    
+    if not _all_symbols_cache["symbols"] or is_cache_stale:
+        logger.info("Cache is stale or empty. Fetching fresh list of all symbols...")
+        symbols = await _fetch_all_symbols_from_api()
+        if symbols: # Only update cache if the fetch was successful
+            _all_symbols_cache["symbols"] = symbols
+            _all_symbols_cache["timestamp"] = now
+    else:
+        logger.info("Returning all symbols from cache.")
+        
+    return _all_symbols_cache["symbols"]
+
+# --- Watchlist File Management ---
+
+def _read_watchlist_data():
+    """Reads the watchlist.json file and returns the list of symbols."""
+    if not WATCHLIST_FILE.exists():
+        return []
+    with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+            # Handle both formats: {"symbols": [...]} and [...]
+            if isinstance(data, dict):
+                return data.get("symbols", [])
+            elif isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            return [] # Return empty list if file is empty or malformed
+    return []
+
+def _write_watchlist_data(symbols: list):
+    """Writes a list of symbols to the watchlist.json file."""
+    with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
+        # We will now standardize on the dictionary format for writing
+        json.dump({"symbols": sorted(list(set(symbols)))}, f, indent=2)
+
+def get_current_watchlist():
+    """Returns the current list of symbols from the watchlist."""
+    return _read_watchlist_data()
+
+def add_symbol_to_watchlist(symbol: str):
+    """Adds a new symbol to the watchlist if it doesn't already exist."""
+    current_symbols = _read_watchlist_data()
+    if symbol and symbol not in current_symbols:
+        current_symbols.append(symbol)
+        _write_watchlist_data(current_symbols)
+    return get_current_watchlist()
+
+def remove_symbol_from_watchlist(symbol_to_remove: str):
+    """Removes a symbol from the watchlist."""
+    current_symbols = _read_watchlist_data()
+    # Use a list comprehension for a clean removal
+    updated_symbols = [s for s in current_symbols if s != symbol_to_remove]
+    _write_watchlist_data(updated_symbols)
+    return get_current_watchlist()
