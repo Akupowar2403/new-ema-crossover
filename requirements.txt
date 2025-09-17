@@ -1,10 +1,9 @@
 # For making API requests to Delta Exchange
 requests
-
 # For data manipulation and EMA calculations
 pandas
-
 # For loading API keys from the .env file
 python-dotenv
-
 python-telegram-bot
+flask
+delta-rest-client

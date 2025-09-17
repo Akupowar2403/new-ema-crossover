@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EMA Crossover Screener</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <header>
+        <h1>📈 Multi-Asset 9 & 20 EMA Crossover Screener</h1>
+        <p>Last Updated: <span id="last-updated">Never</span></p>
+    </header>
+
+    <div class="container">
+
+        <!-- Controls for symbol and timeframe selection -->
+        <div class="controls">
+            <label for="symbol-select">Symbol:</label>
+            <select id="symbol-select">
+                <!-- Symbols will be loaded dynamically -->
+            </select>
+
+            <label for="timeframe-select">Timeframe:</label>
+            <select id="timeframe-select">
+                <option value="15m">15m</option>
+                <option value="1h" selected>1h</option>
+                <option value="4h">4h</option>
+                <option value="1d">1d</option>
+            </select>
+
+            <button id="fetch-crossovers">Fetch Crossovers</button>
+        </div>
+
+        <!-- Div to display crossovers -->
+        <div id="crossover-results" style="margin-top: 20px;"></div>
+
+        <div class="tabs">
+            <button class="tab-link active" onclick="openTab(event, 'Crypto')">Crypto</button>
+            <button class="tab-link" onclick="openTab(event, 'Forex')">Forex</button>
+            <button class="tab-link" onclick="openTab(event, 'Stocks')">Indian Stocks & Indices</button>
+        </div>
+
+        <div id="Crypto" class="tab-content" style="display: block;">
+            <h2>Crypto Pairs (Delta Exchange)</h2>
+            <input id="search-input" placeholder="Search symbol..." style="margin-bottom:10px; width: 200px;" />
+            <table id="crypto-table"></table>
+        </div>
+
+        <div id="Forex" class="tab-content">
+            <h2>Forex Pairs</h2>
+            <input id="search-forex" placeholder="Search symbol..." style="margin-bottom:10px; width: 200px;" />
+            <table id="forex-table"></table>
+        </div>
+
+        <div id="Stocks" class="tab-content">
+            <h2>Indian Stocks & Indices</h2>
+            <input id="search-stocks" placeholder="Search symbol..." style="margin-bottom:10px; width: 200px;" />
+            <table id="stocks-table"></table>
+        </div>
+        
+        <div class="alerts-log">
+            <h2>🚨 New Crossover Alerts</h2>
+            <ul id="alerts-list">
+                <li>No new alerts yet.</li>
+            </ul>
+        </div>
+
+        <div id="loading-spinner" style="display:none;">Loading...</div>
+        <div id="error-message" style="color: red; display:none;"></div>
+
+        <div id="chart"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
