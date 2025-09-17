@@ -22,12 +22,9 @@ def load_watchlist():
         return []
     with open(WATCHLIST_FILE, "r") as f:
         data = json.load(f)
-    # If it's already a list, just return it
     if isinstance(data, list):
         return data
-    # fallback for dict structure
     return data.get("symbols", []) if isinstance(data, dict) else []
-
 
 @app.get("/screener_data")
 def screener_data():
@@ -35,13 +32,28 @@ def screener_data():
     response = {"crypto": [], "forex": [], "stocks": []}
     timeframes = ["15m", "1h", "4h", "1d"]
 
+    now = int(time.time())
+    longest_period = 20
+    warmup_bars = longest_period * 3 + 2  # 62 bars
+    seconds_per_bar = {
+        "15m": 15 * 60,
+        "1h": 60 * 60,
+        "4h": 4 * 60 * 60,
+        "1d": 24 * 60 * 60
+    }
+
     for symbol in symbols:
         timeframes_signals = {}
         for tf in timeframes:
-            df = fetch_historical_candles(symbol, tf)
+            bar_seconds = seconds_per_bar.get(tf, 60 * 60)
+            start_time = now - warmup_bars * bar_seconds
+            end_time = now
+
+            df = fetch_historical_candles(symbol, tf, start=start_time, end=end_time)
             if df.empty:
                 timeframes_signals[tf] = {"status": "N/A", "bars_since": None}
                 continue
+
             signal = check_ema_crossover_signal(df)
             if signal == "BUY":
                 status = "Bullish"
@@ -53,7 +65,6 @@ def screener_data():
             timeframes_signals[tf] = {"status": status, "bars_since": bars_since}
 
         symbol_data = {"name": symbol, "timeframes": timeframes_signals}
-        # Append all to crypto for now; enhance to categorize properly
         response["crypto"].append(symbol_data)
 
     return response
@@ -61,19 +72,43 @@ def screener_data():
 @app.get("/historical-crossovers")
 def historical_crossovers(symbol: str = Query(...), timeframe: str = Query(...)):
     now = int(time.time())
-    start = 1  
-    df = fetch_historical_candles(symbol, timeframe)
+    longest_period = 20
+    warmup_bars = longest_period * 3 + 2
+    seconds_per_bar = {
+        "15m": 15 * 60,
+        "1h": 60 * 60,
+        "4h": 4 * 60 * 60,
+        "1d": 24 * 60 * 60
+    }
+    bar_seconds = seconds_per_bar.get(timeframe, 60 * 60)
+    start = now - warmup_bars * bar_seconds
+    end = now
+
+    df = fetch_historical_candles(symbol, timeframe, start=start, end=end)
     if df.empty:
         return {"crossovers": []}
-    crossovers = get_historical_ema_crossovers(df)
+
+    crossovers = get_historical_ema_crossovers(df, symbol=symbol, timeframe=timeframe)
     return {"crossovers": crossovers}
 
 @app.get("/latest-signal")
 def latest_signal(symbol: str = Query(...), timeframe: str = Query(...)):
     now = int(time.time())
-    start = now - 7 * 24 * 60 * 60
-    df = fetch_historical_candles(symbol, timeframe)
+    longest_period = 20
+    warmup_bars = longest_period * 3 + 2
+    seconds_per_bar = {
+        "15m": 15 * 60,
+        "1h": 60 * 60,
+        "4h": 4 * 60 * 60,
+        "1d": 24 * 60 * 60
+    }
+    bar_seconds = seconds_per_bar.get(timeframe, 60 * 60)
+    start = now - warmup_bars * bar_seconds
+    end = now
+
+    df = fetch_historical_candles(symbol, timeframe, start=start, end=end)
     if df.empty:
         return {"signal": None}
+
     signal = check_ema_crossover_signal(df)
     return {"signal": signal}
