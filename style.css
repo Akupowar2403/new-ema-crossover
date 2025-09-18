@@ -228,3 +228,21 @@ table tbody tr:nth-child(even) {
 .remove-symbol-btn:hover {
     opacity: 0.8;
 }
+
+#symbol-select {
+    background-color: var(--background-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    position: relative;
+    z-index: 10;
+}
+
+/* Add styling for the new search input in the controls section */
+#search-input-controls {
+    width: 200px;
+    padding: 6px;
+    background-color: var(--background-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: 4px;
+}

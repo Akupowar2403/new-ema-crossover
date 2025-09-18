@@ -18,7 +18,10 @@
 
         <section class="controls">
             <label for="symbol-select">Symbol:</label>
-            <select id="symbol-select"></select>
+            <input id="symbol-search-input" list="symbol-datalist" placeholder="Search or select a symbol..." />
+            
+            <datalist id="symbol-datalist">
+                </datalist>
             <label for="timeframe-select">Timeframe:</label>
             <select id="timeframe-select">
                 <option value="15m">15m</option>

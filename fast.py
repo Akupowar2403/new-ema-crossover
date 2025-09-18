@@ -16,11 +16,17 @@ class SymbolRequest(BaseModel):
 
 app = FastAPI()
 
+# List of origins that are allowed to make requests to this server
+origins = [
+    "http://127.0.0.1:5500", # The default port for VS Code Live Server
+    "http://localhost:5500",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins, # Use the specific list of allowed origins
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE"], # Be specific about allowed methods
     allow_headers=["*"],
 )
 
@@ -41,17 +47,13 @@ class ScreenerRequest(BaseModel):
     
 @app.post("/screener_data")
 async def screener_data(request: ScreenerRequest):
-    # Use the provided symbols, otherwise fall back to the watchlist file
     symbols_to_scan = request.symbols if request.symbols is not None else load_watchlist()
-    
     now = int(time.time())
-    warmup_bars = (config.LONG_EMA_PERIOD * config.WARMUP_BARS_FACTOR) + config.WARMUP_BARS_BUFFER
+    start_time = 1 # Fetch all available data
 
     tasks, task_metadata = [], []
     for symbol in symbols_to_scan:
         for tf in config.TIMEFRAMES:
-            bar_seconds = config.SECONDS_PER_BAR.get(tf, 3600)
-            start_time = now - (warmup_bars * bar_seconds)
             task = helpers.fetch_historical_candles(symbol, tf, start=start_time, end=now)
             tasks.append(task)
             task_metadata.append({"symbol": symbol, "tf": tf})
@@ -62,16 +64,25 @@ async def screener_data(request: ScreenerRequest):
     for i, res_df in enumerate(results):
         meta = task_metadata[i]
         symbol, tf = meta["symbol"], meta["tf"]
+        
         status, bars_since = "N/A", None
 
+        # --- THIS IS THE UPDATED LOGIC ---
         if not isinstance(res_df, Exception) and not res_df.empty:
-            signal = helpers.check_ema_crossover_signal(
-                df=res_df,
+            # 1. Get the current state (Bullish, Bearish, etc.)
+            status = helpers.check_ema_crossover_signal(
+                df=res_df.copy(),
                 short_period=config.SHORT_EMA_PERIOD,
                 long_period=config.LONG_EMA_PERIOD
             )
-            bars_since = helpers.get_bars_since_last_signal(res_df)
-            status = "Bullish" if signal == "BUY" else "Bearish" if signal == "SELL" else "Neutral"
+            
+            # 2. If the state is not Neutral, get the bars since the last event
+            if status not in ["Neutral", "N/A"]:
+                bars_since = helpers.get_bars_since_last_signal(
+                    df=res_df.copy(),
+                    short_period=config.SHORT_EMA_PERIOD,
+                    long_period=config.LONG_EMA_PERIOD
+                )
         
         symbol_results[symbol][tf] = {"status": status, "bars_since": bars_since}
 
@@ -85,23 +96,20 @@ async def screener_data(request: ScreenerRequest):
 @app.get("/historical-crossovers")
 async def historical_crossovers(symbol: str = Query(...), timeframe: str = Query(...)):
     now = int(time.time())
-    warmup_bars = (config.LONG_EMA_PERIOD * config.WARMUP_BARS_FACTOR) + config.WARMUP_BARS_BUFFER
-    bar_seconds = config.SECONDS_PER_BAR.get(timeframe, 3600)
-    start_time = now - (warmup_bars * bar_seconds)
+    start_time = 1 # Fetch all available data
     
-    # We must 'await' the result of an async function
     df = await helpers.fetch_historical_candles(symbol, timeframe, start=start_time, end=now)
     
     if df.empty:
         return {"crossovers": []}
 
+    # The outdated 'volume_threshold_factor' argument has been removed from this call
     crossovers = helpers.get_historical_ema_crossovers(
         df, 
         symbol=symbol, 
         timeframe=timeframe,
         short_period=config.SHORT_EMA_PERIOD,
         long_period=config.LONG_EMA_PERIOD,
-        volume_threshold_factor=config.VOLUME_THRESHOLD_FACTOR,
         cooldown_minutes=config.COOLDOWN_MINUTES
     )
     return {"crossovers": crossovers}
@@ -110,12 +118,10 @@ async def historical_crossovers(symbol: str = Query(...), timeframe: str = Query
 @app.get("/latest-signal")
 async def latest_signal(symbol: str = Query(...), timeframe: str = Query(...)):
     now = int(time.time())
-    warmup_bars = (config.LONG_EMA_PERIOD * config.WARMUP_BARS_FACTOR) + config.WARMUP_BARS_BUFFER
-    bar_seconds = config.SECONDS_PER_BAR.get(timeframe, 3600)
-    start_time = now - (warmup_bars * bar_seconds)
+    start_time = 1 # Fetch all available data
     
-    # We must 'await' the result of an async function
     df = await helpers.fetch_historical_candles(symbol, timeframe, start=start_time, end=now)
+    # ... rest of function is the same
 
     if df.empty:
         return {"signal": None}

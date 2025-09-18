@@ -3,14 +3,13 @@ const API_BASE_URL = 'http://127.0.0.1:8000';
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 const TIME_FRAMES = ["15m", "1h", "4h", "1d"];
 let previousSignals = {};
-let masterSymbolList = []; // Cache for autocomplete
+let masterSymbolList = []; // Cache for all available symbols
 
 // --- CORE DATA FUNCTIONS ---
 
-// UPDATED: Now accepts a list of symbols to fetch
 async function fetchScreenerData(symbols) {
     if (!symbols || symbols.length === 0) {
-        populateTable('crypto-table', []); // Clear the table if watchlist is empty
+        populateTable('crypto-table', []);
         return null;
     }
     showError('');
@@ -126,7 +125,6 @@ function populateTable(tableId, assetsData) {
     const fragment = document.createDocumentFragment();
     assetsData.forEach(asset => {
         const tr = document.createElement('tr');
-        // UPDATED: Added a class and data-attribute for the click-to-add feature
         let rowContent = `<td class="asset-name clickable" data-symbol="${asset.name}" title="Add ${asset.name} to Watchlist">${asset.name} ➕</td>`;
         TIME_FRAMES.forEach(tf => {
             const signal = asset.timeframes?.[tf];
@@ -148,14 +146,14 @@ function populateTable(tableId, assetsData) {
     tbody.appendChild(fragment);
 }
 
-function populateSymbolDropdown(assets) {
-    const symbolSelect = document.getElementById('symbol-select');
-    symbolSelect.innerHTML = '';
+// UPDATED: This function now populates the <datalist> element
+function populateSymbolDatalist(assets) {
+    const datalist = document.getElementById('symbol-datalist');
+    datalist.innerHTML = '';
     assets.forEach(item => {
         const option = document.createElement('option');
-        option.value = item.name;
-        option.textContent = item.name;
-        symbolSelect.appendChild(option);
+        option.value = item;
+        datalist.appendChild(option);
     });
 }
 
@@ -240,15 +238,12 @@ function addSearchFilter(inputId, tableId) {
 
 // --- INITIALIZATION ---
 
-// UPDATED: Now fetches watchlist first, then fetches screener data for that list.
 async function runDataRefreshCycle() {
     const watchlist = await fetchWatchlist();
-    if (watchlist === null) return; // Stop if there was an error
+    if (watchlist === null) return; 
     
-    // Always render the latest watchlist
     renderWatchlist(watchlist);
 
-    // Now, fetch screener data ONLY for the symbols in our watchlist
     const screenerData = await fetchScreenerData(watchlist);
     if (screenerData) {
         populateAllTables(screenerData);
@@ -257,18 +252,18 @@ async function runDataRefreshCycle() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Initial data load for everything
-    fetchAllSymbols(); // For autocomplete
-    await runDataRefreshCycle(); // Initial screener run based on watchlist
+    await fetchAllSymbols(); 
+    populateSymbolDatalist(masterSymbolList); // Populate the new datalist
+    await runDataRefreshCycle(); 
 
-    // Set up auto-refresh
     setInterval(runDataRefreshCycle, REFRESH_INTERVAL_MS);
 
     // Set up event listeners
     addSearchFilter('search-input', 'crypto-table');
     
     document.getElementById('fetch-crossovers').addEventListener('click', async () => {
-        const symbol = document.getElementById('symbol-select').value;
+        // UPDATED: Get value from the new input ID
+        const symbol = document.getElementById('symbol-search-input').value;
         const timeframe = document.getElementById('timeframe-select').value;
         const container = document.getElementById('crossover-results');
         container.innerHTML = '<p>Loading crossover data...</p>';
@@ -294,7 +289,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);
                 input.value = '';
-                await runDataRefreshCycle(); // Refresh screener with new list
+                await runDataRefreshCycle();
             }
         }
     });
@@ -305,20 +300,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             const updatedWatchlist = await removeSymbolFromWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);
-                await runDataRefreshCycle(); // Refresh screener with new list
+                await runDataRefreshCycle();
             }
         }
     });
-
-    // NEW: Event listener for click-to-add on the main screener table (using a placeholder for now)
+    
     document.getElementById('crypto-table').addEventListener('click', async (e) => {
         if (e.target.matches('.asset-name.clickable')) {
             const symbol = e.target.dataset.symbol;
             const updatedWatchlist = await addSymbolToWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);
-                // No need to refresh the screener, as the symbol is already there
-                alert(`${symbol} added to watchlist!`); // Simple feedback
             }
         }
     });
