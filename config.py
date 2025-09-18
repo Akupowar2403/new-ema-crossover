@@ -4,4 +4,4 @@ LONG_EMA_PERIOD = 20
 COOLDOWN_MINUTES = 30
 
 # --- SCREENER PARAMETERS ---
-TIMEFRAMES = ["15m", "1h", "4h", "1d"]
+TIMEFRAMES = ["1m","15m", "1h", "4h", "1d"]

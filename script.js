@@ -1,7 +1,7 @@
 // --- CONFIGURATION & STATE ---
 const API_BASE_URL = 'http://127.0.0.1:8000';
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
-const TIME_FRAMES = ["15m", "1h", "4h", "1d"];
+const TIME_FRAMES = ["1m","15m", "1h", "4h", "1d"];
 let previousSignals = {};
 let masterSymbolList = []; // Cache for all available symbols
 
