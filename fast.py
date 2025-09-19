@@ -2,19 +2,52 @@ import json
 import time
 import asyncio
 from pathlib import Path
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query ,WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
+from contextlib import asynccontextmanager
 
 # Import our helper functions and the new config file
 import helpers
 import config
+import websocket_manager # Import our new manager
 
 class SymbolRequest(BaseModel):
     symbol: str
 
-app = FastAPI()
+# --- [ NEW ] ---
+# Manages active browser WebSocket connections
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+manager = ConnectionManager()
+
+
+# --- [ NEW ] ---
+# Starts the real-time client when the server boots up
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Server startup: Starting WebSocket client...")
+    task = asyncio.create_task(websocket_manager.start_websocket_client(manager))
+    yield
+    print("Server shutdown: Stopping WebSocket client...")
+    task.cancel()
+
+app = FastAPI(lifespan=lifespan)
+# --- [ END NEW ] ---
 
 # List of origins that are allowed to make requests to this server
 origins = [
@@ -44,7 +77,19 @@ def load_watchlist():
 
 class ScreenerRequest(BaseModel):
     symbols: Optional[List[str]] = None
-    
+
+# --- [ NEW ] ---
+# The endpoint for your browser's WebSocket to connect to
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+# --- [ END NEW ] ---
+
 @app.post("/screener_data")
 async def screener_data(request: ScreenerRequest):
     symbols_to_scan = request.symbols if request.symbols is not None else load_watchlist()

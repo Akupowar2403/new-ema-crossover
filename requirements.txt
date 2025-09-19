@@ -6,7 +6,8 @@ pandas
 python-dotenv
 python-telegram-bot
 flask
-delta-rest-client
+websocket-client
 "httpx[http2]" 
 aiohttp
 redis
+"uvicorn[standard]"

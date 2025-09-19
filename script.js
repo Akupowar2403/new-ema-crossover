@@ -1,9 +1,37 @@
 // --- CONFIGURATION & STATE ---
 const API_BASE_URL = 'http://127.0.0.1:8000';
-const REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
-const TIME_FRAMES = ["1m","15m", "1h", "4h", "1d"];
+const WS_URL = 'ws://127.0.0.1:8000/ws';
+const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+const TIME_FRAMES = ["1m", "15m", "1h", "4h", "1d"];
 let previousSignals = {};
-let masterSymbolList = []; // Cache for all available symbols
+let masterSymbolList = [];
+
+// --- WEBSOCKET CONNECTION ---
+function connectWebSocket() {
+    console.log("Attempting to connect to WebSocket...");
+    const ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+        console.log("WebSocket connection established.");
+    };
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'new_signal') {
+            console.log("Received new signal:", data);
+            updateTableCell(data.symbol, data.timeframe, data.signal);
+        }
+    };
+
+    ws.onclose = () => {
+        console.log("WebSocket connection closed. Reconnecting in 5 seconds...");
+        setTimeout(connectWebSocket, 5000);
+    };
+
+    ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+    };
+}
 
 // --- CORE DATA FUNCTIONS ---
 
@@ -105,6 +133,27 @@ async function removeSymbolFromWatchlist(symbol) {
 
 // --- UI POPULATION & UPDATE FUNCTIONS ---
 
+function updateTableCell(symbol, timeframe, signal) {
+    const table = document.getElementById('crypto-table');
+    const row = table.querySelector(`[data-symbol="${symbol}"]`)?.closest('tr');
+    if (!row) return;
+
+    const timeframeIndex = TIME_FRAMES.indexOf(timeframe);
+    if (timeframeIndex === -1) return;
+
+    const cell = row.cells[timeframeIndex + 1];
+    if (!cell) return;
+    
+    const statusClass = signal.status.toLowerCase().replace(/\s+/g, '-');
+    const barsText = signal.bars_since !== null ? `(${signal.bars_since} bars)` : '';
+    const text = signal.status !== "Neutral" && signal.status !== "N/A"
+        ? `${signal.status.substring(0, 4).toUpperCase()} ${barsText}`
+        : signal.status;
+
+    cell.className = statusClass;
+    cell.textContent = text;
+}
+
 function populateAllTables(data) {
     populateTable('crypto-table', data.crypto || []);
 }
@@ -125,7 +174,9 @@ function populateTable(tableId, assetsData) {
     const fragment = document.createDocumentFragment();
     assetsData.forEach(asset => {
         const tr = document.createElement('tr');
-        let rowContent = `<td class="asset-name clickable" data-symbol="${asset.name}" title="Add ${asset.name} to Watchlist">${asset.name} ➕</td>`;
+        // The data-symbol attribute is now on the <tr> for easier lookup
+        tr.dataset.symbol = asset.name; 
+        let rowContent = `<td class="asset-name clickable" title="Add ${asset.name} to Watchlist">${asset.name} ➕</td>`;
         TIME_FRAMES.forEach(tf => {
             const signal = asset.timeframes?.[tf];
             if (signal) {
@@ -146,7 +197,6 @@ function populateTable(tableId, assetsData) {
     tbody.appendChild(fragment);
 }
 
-// UPDATED: This function now populates the <datalist> element
 function populateSymbolDatalist(assets) {
     const datalist = document.getElementById('symbol-datalist');
     datalist.innerHTML = '';
@@ -252,17 +302,17 @@ async function runDataRefreshCycle() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    connectWebSocket();
+    
     await fetchAllSymbols(); 
-    populateSymbolDatalist(masterSymbolList); // Populate the new datalist
+    populateSymbolDatalist(masterSymbolList);
     await runDataRefreshCycle(); 
 
     setInterval(runDataRefreshCycle, REFRESH_INTERVAL_MS);
 
-    // Set up event listeners
     addSearchFilter('search-input', 'crypto-table');
     
     document.getElementById('fetch-crossovers').addEventListener('click', async () => {
-        // UPDATED: Get value from the new input ID
         const symbol = document.getElementById('symbol-search-input').value;
         const timeframe = document.getElementById('timeframe-select').value;
         const container = document.getElementById('crossover-results');
@@ -307,7 +357,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     document.getElementById('crypto-table').addEventListener('click', async (e) => {
         if (e.target.matches('.asset-name.clickable')) {
-            const symbol = e.target.dataset.symbol;
+            const symbol = e.target.closest('tr').dataset.symbol;
             const updatedWatchlist = await addSymbolToWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);

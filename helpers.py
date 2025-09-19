@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 import redis
 import json
-
+import config
 from pathlib import Path
 
 WATCHLIST_FILE = Path("watchlist.json")
@@ -106,7 +106,7 @@ def get_historical_ema_crossovers(df: pd.DataFrame, symbol: str, timeframe: str,
             continue
 
         final_crossovers.append({
-            "timestamp": idx,
+            "timestamp": idx.timestamp(), # This converts it to a number
             "type": "bullish" if row['crossover'] > 0 else "bearish",
             "close": row['close']
         })
@@ -119,30 +119,40 @@ def get_historical_ema_crossovers(df: pd.DataFrame, symbol: str, timeframe: str,
 
 def check_ema_crossover_signal(df: pd.DataFrame, short_period=9, long_period=20) -> str:
     """
-    Checks the CURRENT STATE of the EMAs on the last closed candle.
-    Returns "Bullish" if short > long, "Bearish" if short < long, or "Neutral".
+    Checks for a crossover signal using the most recent candle data.
+    Returns "Bullish", "Bearish", or the current state.
     """
     if len(df) < long_period + 2:
         return "N/A"
 
-    # Ensure EMAs are calculated
     df['ema_short'] = df['close'].ewm(span=short_period, adjust=False).mean()
     df['ema_long'] = df['close'].ewm(span=long_period, adjust=False).mean()
 
-    # Check the state of the last closed candle (iloc[-2])
-    last_closed_short_ema = df['ema_short'].iloc[-2]
-    last_closed_long_ema = df['ema_long'].iloc[-2]
-
-    if last_closed_short_ema > last_closed_long_ema:
+    # --- UPDATED LOGIC ---
+    # We now use the last two data points, including the current in-progress candle
+    prev_short = df['ema_short'].iloc[-2]
+    curr_short = df['ema_short'].iloc[-1] # Current, in-progress value
+    prev_long = df['ema_long'].iloc[-2]
+    curr_long = df['ema_long'].iloc[-1] # Current, in-progress value
+    
+    # Check for a fresh crossover event
+    if prev_short <= prev_long and curr_short > curr_long:
         return "Bullish"
-    elif last_closed_short_ema < last_closed_long_ema:
+    elif prev_short >= prev_long and curr_short < curr_long:
+        return "Bearish"
+
+    # If no crossover, return the current state
+    if curr_short > curr_long:
+        return "Bullish"
+    elif curr_short < curr_long:
         return "Bearish"
     
     return "Neutral"
 
 def get_bars_since_last_signal(df: pd.DataFrame, short_period=9, long_period=20) -> int | None:
     """
-    Calculates the number of bars since the last actual crossover event.
+    Calculates the number of bars since the last actual crossover event,
+    including the in-progress candle.
     """
     if len(df) < long_period + 2:
         return None
@@ -155,7 +165,6 @@ def get_bars_since_last_signal(df: pd.DataFrame, short_period=9, long_period=20)
     df.loc[df['ema_short'] > df['ema_long'], 'signal'] = 1
     df.loc[df['ema_short'] < df['ema_long'], 'signal'] = -1
     
-    # A crossover is where the signal value changes (e.g., from 1 to -1)
     df['crossover'] = df['signal'].diff().fillna(0)
     
     crossover_events = df[df['crossover'] != 0]
@@ -163,10 +172,10 @@ def get_bars_since_last_signal(df: pd.DataFrame, short_period=9, long_period=20)
     if crossover_events.empty:
         return None
     
-    # Get the integer position of the last crossover event in the DataFrame
+    # Get the integer position of the last crossover event
     last_crossover_pos = df.index.get_loc(crossover_events.index[-1])
     
-    # Calculate bars since: total bars minus the position of the last crossover, minus 1
+    # Correctly calculate bars since: total bars minus the position, minus 1
     bars_since = len(df) - 1 - last_crossover_pos
     return bars_since
 

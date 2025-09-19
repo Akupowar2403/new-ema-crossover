@@ -65,10 +65,6 @@ last_logged_candle_time = None
 def check_ema_crossover_signal(df, short_period=9, long_period=20):
     global last_logged_candle_time
 
-    warmup = max(short_period, long_period) * 3
-    if len(df) < warmup + 2:
-        return None
-
     df[f'ema_{short_period}'] = df['close'].ewm(span=short_period, adjust=False).mean()
     df[f'ema_{long_period}'] = df['close'].ewm(span=long_period, adjust=False).mean()
 
