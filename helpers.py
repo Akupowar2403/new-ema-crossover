@@ -74,110 +74,39 @@ async def fetch_historical_candles(symbol: str, resolution: str, start: int, end
     
     return df
 
-def get_historical_ema_crossovers(df: pd.DataFrame, symbol: str, timeframe: str, short_period=9, long_period=20, cooldown_minutes=30) -> list:
+def get_ema_signal(df: pd.DataFrame, last_crossover_state: dict) -> dict:
     """
-    Finds the first valid EMA crossover. (Volume filter is removed).
+    Analyzes candle data to find the EMA signal, trend, and bars since.
+    Uses a stateful approach by accepting the last known crossover state.
     """
-    warmup = max(short_period, long_period) * 3
-    if len(df) < warmup + 2:
-        return []
-    if not redis_client:
-        logger.warning("Redis client not available. Cannot check for crossovers.")
-        return []
+    short_period = config.SHORT_EMA_PERIOD
+    long_period = config.LONG_EMA_PERIOD
+    
+    if len(df) < long_period + 2:
+        return {"status": "N/A", "bars_since": None}
 
-    # Calculate indicators
+    df = df.copy()
     df['ema_short'] = df['close'].ewm(span=short_period, adjust=False).mean()
     df['ema_long'] = df['close'].ewm(span=long_period, adjust=False).mean()
+
+    # Find the most recent crossover in the current dataset
     df['signal'] = 0
     df.loc[df['ema_short'] > df['ema_long'], 'signal'] = 1
     df.loc[df['ema_short'] < df['ema_long'], 'signal'] = -1
-    df['crossover'] = df['signal'].diff()
-
-    # Get all points where a crossover occurred
-    valid_candidates = df[df['crossover'] != 0].copy()
-    if valid_candidates.empty:
-        return []
-
-    # Final Redis Check
-    final_crossovers = []
-    for idx, row in valid_candidates.iterrows():
-        redis_key = f"cooldown:{symbol}-{timeframe}"
-        if redis_client.exists(redis_key):
-            continue
-
-        final_crossovers.append({
-            "timestamp": idx.timestamp(), # This converts it to a number
-            "type": "bullish" if row['crossover'] > 0 else "bearish",
-            "close": row['close']
-        })
-        
-        cooldown_seconds = cooldown_minutes * 60
-        redis_client.set(redis_key, "active", ex=cooldown_seconds)
-        break 
-
-    return final_crossovers
-
-def check_ema_crossover_signal(df: pd.DataFrame, short_period=9, long_period=20) -> str:
-    """
-    Checks for a crossover signal using the most recent candle data.
-    Returns "Bullish", "Bearish", or the current state.
-    """
-    if len(df) < long_period + 2:
-        return "N/A"
-
-    df['ema_short'] = df['close'].ewm(span=short_period, adjust=False).mean()
-    df['ema_long'] = df['close'].ewm(span=long_period, adjust=False).mean()
-
-    # --- UPDATED LOGIC ---
-    # We now use the last two data points, including the current in-progress candle
-    prev_short = df['ema_short'].iloc[-2]
-    curr_short = df['ema_short'].iloc[-1] # Current, in-progress value
-    prev_long = df['ema_long'].iloc[-2]
-    curr_long = df['ema_long'].iloc[-1] # Current, in-progress value
-    
-    # Check for a fresh crossover event
-    if prev_short <= prev_long and curr_short > curr_long:
-        return "Bullish"
-    elif prev_short >= prev_long and curr_short < curr_long:
-        return "Bearish"
-
-    # If no crossover, return the current state
-    if curr_short > curr_long:
-        return "Bullish"
-    elif curr_short < curr_long:
-        return "Bearish"
-    
-    return "Neutral"
-
-def get_bars_since_last_signal(df: pd.DataFrame, short_period=9, long_period=20) -> int | None:
-    """
-    Calculates the number of bars since the last actual crossover event,
-    including the in-progress candle.
-    """
-    if len(df) < long_period + 2:
-        return None
-
-    # Calculate EMAs and signals to find crossover events
-    df['ema_short'] = df['close'].ewm(span=short_period, adjust=False).mean()
-    df['ema_long'] = df['close'].ewm(span=long_period, adjust=False).mean()
-    
-    df['signal'] = 0
-    df.loc[df['ema_short'] > df['ema_long'], 'signal'] = 1
-    df.loc[df['ema_short'] < df['ema_long'], 'signal'] = -1
-    
     df['crossover'] = df['signal'].diff().fillna(0)
-    
     crossover_events = df[df['crossover'] != 0]
+
+    if not crossover_events.empty:
+        last_event = crossover_events.iloc[-1]
+        last_crossover_state['trend'] = "Bullish" if last_event['crossover'] > 0 else "Bearish"
+        last_crossover_state['index'] = df.index.get_loc(last_event.name)
     
-    if crossover_events.empty:
-        return None
+    # Calculate bars since the last known crossover
+    trend = last_crossover_state.get('trend', "N/A")
+    index = last_crossover_state.get('index')
+    bars_since = (len(df) - 1) - index if index is not None else None
     
-    # Get the integer position of the last crossover event
-    last_crossover_pos = df.index.get_loc(crossover_events.index[-1])
-    
-    # Correctly calculate bars since: total bars minus the position, minus 1
-    bars_since = len(df) - 1 - last_crossover_pos
-    return bars_since
+    return {"status": trend, "bars_since": bars_since}
 
 # --- All Symbols Fetching & Caching ---
 

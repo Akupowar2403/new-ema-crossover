@@ -94,7 +94,7 @@ async def websocket_endpoint(websocket: WebSocket):
 async def screener_data(request: ScreenerRequest):
     symbols_to_scan = request.symbols if request.symbols is not None else load_watchlist()
     now = int(time.time())
-    start_time = 1 # Fetch all available data
+    start_time = 1
 
     tasks, task_metadata = [], []
     for symbol in symbols_to_scan:
@@ -110,26 +110,13 @@ async def screener_data(request: ScreenerRequest):
         meta = task_metadata[i]
         symbol, tf = meta["symbol"], meta["tf"]
         
-        status, bars_since = "N/A", None
+        signal_data = {"status": "N/A", "bars_since": None}
 
-        # --- THIS IS THE UPDATED LOGIC ---
         if not isinstance(res_df, Exception) and not res_df.empty:
-            # 1. Get the current state (Bullish, Bearish, etc.)
-            status = helpers.check_ema_crossover_signal(
-                df=res_df.copy(),
-                short_period=config.SHORT_EMA_PERIOD,
-                long_period=config.LONG_EMA_PERIOD
-            )
-            
-            # 2. If the state is not Neutral, get the bars since the last event
-            if status not in ["Neutral", "N/A"]:
-                bars_since = helpers.get_bars_since_last_signal(
-                    df=res_df.copy(),
-                    short_period=config.SHORT_EMA_PERIOD,
-                    long_period=config.LONG_EMA_PERIOD
-                )
+            # This one call now gets all the info we need
+            signal_data = helpers.get_ema_signal(res_df, {})
         
-        symbol_results[symbol][tf] = {"status": status, "bars_since": bars_since}
+        symbol_results[symbol][tf] = signal_data
 
     response_data = [
         {"name": symbol, "timeframes": tf_signals}

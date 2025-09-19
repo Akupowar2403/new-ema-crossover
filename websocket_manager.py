@@ -22,21 +22,20 @@ class CandleManager:
     def __init__(self, symbol: str, timeframe: str, manager):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.manager = manager # Store the connection manager
-        self.candles_df = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
-        self.last_signal = {"status": "N/A", "bars_since": None}
-        self.last_candle_start_time = None
+        self.manager = manager
+        self.candles_df = pd.DataFrame()
+        # --- STATE IS NOW MANAGED HERE, PER INSTANCE ---
+        self.last_crossover_state = {'trend': None, 'index': None}
 
     async def initialize_history(self):
         now = int(time.time())
         print(f"[{self.symbol}-{self.timeframe}] Fetching historical candles...")
         self.candles_df = await helpers.fetch_historical_candles(self.symbol, self.timeframe, 1, now)
+        # Initialize the last known crossover from historical data
         if not self.candles_df.empty:
-            self.last_candle_start_time = self.candles_df.index[-1].timestamp()
-        print(f"[{self.symbol}-{self.timeframe}] Fetched {len(self.candles_df)} candles.")
+            self.last_crossover_state = helpers.get_ema_signal(self.candles_df, self.last_crossover_state)
+        print(f"[{self.symbol}-{self.timeframe}] Initial state: {self.last_crossover_state}")
 
-    # --- [ UPDATED ] ---
-    # This function is now async
     async def process_live_candle(self, msg: dict):
         ts_sec = msg.get('candle_start_time') // 1_000_000
         candle_data = {
@@ -46,29 +45,20 @@ class CandleManager:
         }
         candle_timestamp = pd.to_datetime(ts_sec, unit='s')
         self.candles_df.loc[candle_timestamp] = candle_data
+        
+        # Always run analysis, passing in the manager's current state
+        new_signal = helpers.get_ema_signal(self.candles_df, self.last_crossover_state)
 
-        if self.last_candle_start_time is not None and ts_sec > self.last_candle_start_time:
-            df_for_analysis = self.candles_df.iloc[:-1].copy()
-            status = helpers.check_ema_crossover_signal(df_for_analysis)
-            bars_since = helpers.get_bars_since_last_signal(df_for_analysis)
-            new_signal = {"status": status, "bars_since": bars_since}
-
-            if new_signal != self.last_signal:
-                self.last_signal = new_signal
-                
-                # --- [ THE BRIDGE ] ---
-                # Instead of printing, we now broadcast the new signal to all connected browsers.
-                payload = {
-                    "type": "new_signal",
-                    "symbol": self.symbol,
-                    "timeframe": self.timeframe,
-                    "signal": self.last_signal
-                }
-                await self.manager.broadcast(json.dumps(payload))
-                print(f"BROADCASTED new signal for {self.symbol}-{self.timeframe}: {self.last_signal}")
-
-        self.last_candle_start_time = ts_sec
-
+        if new_signal and new_signal['status'] != self.last_crossover_state.get('status'):
+            self.last_crossover_state = new_signal # Update the state
+            payload = {
+                "type": "new_signal",
+                "symbol": self.symbol,
+                "timeframe": self.timeframe,
+                "signal": self.last_crossover_state
+            }
+            await self.manager.broadcast(json.dumps(payload))
+            print(f"BROADCASTED new signal for {self.symbol}-{self.timeframe}: {self.last_crossover_state}")
 
 # Type hint for our dictionary of managers
 CandleManagers = Dict[Tuple[str, str], CandleManager]
