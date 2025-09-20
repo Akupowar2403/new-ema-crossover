@@ -18,37 +18,6 @@ from strategy import check_ema_crossover_signal
 from telegram_bot import TelegramBotApp
 from telegram_bot import AlertService
 
-# --------------- Logging Setup ---------------
-
-LOG_FILE = "app.log"
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.DEBUG)
-
-# Rotating file handler for all logs
-file_handler = logging.handlers.RotatingFileHandler(
-    LOG_FILE, maxBytes=5*1024*1024, backupCount=5, encoding='utf-8'
-)
-file_handler.setLevel(logging.DEBUG)
-file_format = logging.Formatter('%(asctime)s | %(levelname)s | %(name)s | %(message)s')
-file_handler.setFormatter(file_format)
-root_logger.addHandler(file_handler)
-
-# Console handler only for strategy logger (EMA debug logs)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
-console_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(console_format)
-
-ema_logger = logging.getLogger('strategy')  # Make sure this matches your strategy.py logger name
-ema_logger.setLevel(logging.DEBUG)
-ema_logger.addHandler(console_handler)
-
-# Suppress noisy logs on console but keep in file
-for noisy_logger_name in ['httpx', 'websocket', 'telegram', 'telegram.ext']:
-    logger = logging.getLogger(noisy_logger_name)
-    logger.setLevel(logging.WARNING)
-
-# ---------------------------------------------
 
 # Config & globals
 WEBSOCKET_URL = "wss://socket.india.delta.exchange"
@@ -151,24 +120,21 @@ def on_message(ws, message):
                 candles_df.sort_index(inplace=True)
 
             # Run strategy only when a candle completes (on new candle start)
-            if last_candle_start_time is not None and candle_start_time != last_candle_start_time:
-                signal = check_ema_crossover_signal(candles_df, short_period=9, long_period=20)
-                if signal and signal != last_signal:
-                    try:
-                        alert_message = (
-                            f"🚨 Trade Signal Alert 🚨\n"
-                            f"Symbol: {symbol}\n"
-                            f"Time: {datetime.fromtimestamp(ts_sec).strftime('%Y-%m-%d %H:%M:%S')}\n"
-                            f"Resolution: {resolution}\n"
-                            f"Signal Triggered: {signal}"
-                        )
-                        alert_service.send_signal_alert(alert_message)
-                        print(f"Sent alert: {alert_message}")
-                        last_signal = signal
-                    except Exception as e:
-                        print(f"Error sending alert: {e}")
-                elif not signal:
-                    last_signal = None  # Reset state for future crossovers
+            signal, trend, bars = check_ema_crossover_signal(candles_df, short_period=9, long_period=20)
+            if signal is not None and signal != last_signal:
+                alert_message = (
+                    f"🚨 Trade Signal Alert 🚨\n"
+                    f"Symbol: {symbol}\n"
+                    f"Time: {datetime.fromtimestamp(ts_sec).strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"Resolution: {resolution}\n"
+                    f"Signal Triggered: {signal}"
+                )
+                alert_service.send_signal_alert(alert_message)
+                print(f"Sent alert: {alert_message}")
+                last_signal = signal
+            elif signal is None:
+                last_signal = None  # Reset to allow future signals
+
 
             last_candle_start_time = candle_start_time
         else:
