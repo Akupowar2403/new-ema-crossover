@@ -1,8 +1,10 @@
 import pandas as pd
 
 last_crossover = None  # Track the last crossover direction globally
-last_crossover_index = None  # Track the index of last crossover
+last_crossover_index = None 
 last_processed_index = None
+
+
 
 def detect_last_crossover(df, short_period=9, long_period=20):
     """

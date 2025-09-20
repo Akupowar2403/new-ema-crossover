@@ -27,7 +27,8 @@ API_SECRET = 'aehICdR8xRrK8wjFinqblJvM5ljXV8vHwH6sgasyMn0wF9AJP4A6fFPt6qdT'
 symbol = 'BTCUSD'
 resolution = '1m'
 candles_df = pd.DataFrame()  # Global DataFrame to hold candles
-last_candle_start_time = None  # Track last processed candle start time
+last_candle_start_time = None  
+
 
 # ---- NEW GLOBAL VARIABLE to track last sent signal ---
 last_signal = None  
