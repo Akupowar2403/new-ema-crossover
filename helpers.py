@@ -1,3 +1,4 @@
+# helpers.py
 import time
 import httpx
 import pandas as pd
@@ -16,55 +17,47 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- Redis Connection ---
-# Establishes a connection to the Redis server.
-# decode_responses=True automatically converts Redis's binary responses into Python strings.
 try:
     redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
     redis_client.ping()
     logger.info("Successfully connected to Redis.")
 except redis.exceptions.ConnectionError as e:
-    logger.critical(f"Could not connect to Redis. Cooldown logic will be disabled. Error: {e}")
+    logger.critical(f"Could not connect to Redis. Caching will be disabled. Error: {e}")
     redis_client = None
 
 # --- Reusable HTTP Client ---
-# Creates a single, reusable AsyncClient for efficient connection pooling.
 client = httpx.AsyncClient()
 
+
+# --- Core Data and Signal Logic ---
+
 async def fetch_historical_candles(symbol: str, resolution: str, start: int, end: int, semaphore: asyncio.Semaphore) -> pd.DataFrame:
-    """
-    Fetches and cleans historical candles asynchronously, respecting a concurrency limit.
-    """
+    """Fetches and cleans historical candles asynchronously, respecting a concurrency limit."""
     url = 'https://api.india.delta.exchange/v2/history/candles'
     params = {'symbol': symbol, 'resolution': resolution, 'start': start, 'end': end}
     headers = {'Accept': 'application/json'}
 
-    # This will wait here if the maximum number of requests are already running
     async with semaphore:
         try:
             response = await client.get(url, params=params, headers=headers, timeout=30.0)
             response.raise_for_status()
             data = response.json().get('result', [])
-            await asyncio.sleep(0.1) # Add a small delay to be respectful to the API
+            await asyncio.sleep(0.1)
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.error(f"Error fetching candles for {symbol} {resolution}: {exc}")
             return pd.DataFrame()
 
     if not data:
-        logger.warning(f"No historical candle data received for {symbol} {resolution}")
         return pd.DataFrame()
 
     df = pd.DataFrame(data, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
     df.set_index('time', inplace=True)
-    
-    # Convert Unix timestamp index to datetime, which is good practice
-    df.index = pd.to_datetime(df.index, unit='s')
+    df.index = pd.to_datetime(df.index, unit='s').tz_localize('UTC') # Set timezone to UTC
 
-    # Data Cleaning
     price_cols = ['open', 'high', 'low', 'close']
     df = df[df['volume'] > 0]
     df = df[(df[price_cols] > 0).all(axis=1)]
 
-    # Outlier removal loop (MAD filter)
     for col in price_cols:
         if not df.empty:
             median = df[col].median()
@@ -74,143 +67,147 @@ async def fetch_historical_candles(symbol: str, resolution: str, start: int, end
     
     return df
 
-# Add this new function to your helpers.py file
+def analyze_ema_state(df: pd.DataFrame) -> dict:
+    """
+    Analyzes candle data for both confirmed and live EMA crossover states.
 
-def get_ema_signal(df: pd.DataFrame, last_crossover_state: dict) -> dict:
+    Returns a dictionary with:
+    - trend: The trend ('Bullish'/'Bearish') from the last *confirmed* crossover.
+    - bars_since_confirmed: How many closed bars have passed since that crossover.
+    - live_status: The current relationship of the EMAs ('Short > Long' or 'Short < Long').
+    - live_crossover_detected: The type of crossover happening on the live candle ('Bullish', 'Bearish', or None).
     """
-    Analyzes candle data using the last two *closed* candles to find the
-    EMA signal, providing a more confirmed signal.
-    """
-    short_period = config.SHORT_EMA_PERIOD
-    long_period = config.LONG_EMA_PERIOD
-    
-    # We need at least 3 rows to look at iloc[-3] and iloc[-2] for the two closed candles
-    if len(df) < long_period + 3:
-        return {"status": "N/A", "bars_since": None, "index": None}
+    analysis = {
+        "trend": "N/A",
+        "bars_since_confirmed": None,
+        "live_status": "N/A",
+        "live_crossover_detected": None
+    }
+
+    if len(df) < config.LONG_EMA_PERIOD + 2:
+        return analysis
 
     df = df.copy()
-    df['ema_short'] = df['close'].ewm(span=short_period, adjust=False).mean()
-    df['ema_long'] = df['close'].ewm(span=long_period, adjust=False).mean()
+    df['ema_short'] = df['close'].ewm(span=config.SHORT_EMA_PERIOD, adjust=False).mean()
+    df['ema_long'] = df['close'].ewm(span=config.LONG_EMA_PERIOD, adjust=False).mean()
 
-    # --- Logic from your detect_last_crossover ---
-    # Scan history if the trend is unknown
-    if not last_crossover_state.get('trend'):
-        for i in range(len(df) - 2, 0, -1): # Iterate up to the second to last element
-            prev_s, curr_s = df['ema_short'].iloc[i - 1], df['ema_short'].iloc[i]
-            prev_l, curr_l = df['ema_long'].iloc[i - 1], df['ema_long'].iloc[i]
-            if prev_s <= prev_l and curr_s > curr_l:
-                last_crossover_state = {'trend': 'Bullish', 'index': i}
-                break
-            elif prev_s >= prev_l and curr_s < curr_l:
-                last_crossover_state = {'trend': 'Bearish', 'index': i}
-                break
-    
-    # --- Logic from your check_ema_crossover_signal on closed candles ---
-    prev_short = df['ema_short'].iloc[-3]
-    curr_short = df['ema_short'].iloc[-2] # This is the last closed candle
-    prev_long = df['ema_long'].iloc[-3]
-    curr_long = df['ema_long'].iloc[-2]
-    current_index = len(df) - 2 # The index of the last closed candle
-
-    if prev_short <= prev_long and curr_short > curr_long:
-        last_crossover_state = {'trend': 'Bullish', 'index': current_index}
-    elif prev_short >= prev_long and curr_short < curr_long:
-        last_crossover_state = {'trend': 'Bearish', 'index': current_index}
+    # --- 1. Find the Last Confirmed Crossover (scans historical closed candles) ---
+    confirmed_crossover_index = None
+    # We iterate backwards from the second-to-last candle (the last *closed* one)
+    for i in range(len(df) - 2, 0, -1):
+        prev_s, curr_s = df['ema_short'].iloc[i - 1], df['ema_short'].iloc[i]
+        prev_l, curr_l = df['ema_long'].iloc[i - 1], df['ema_long'].iloc[i]
         
-    # --- Logic from your calculate_bars_since_crossover ---
-    trend = last_crossover_state.get('trend', "N/A")
-    index = last_crossover_state.get('index')
-    bars_since = current_index - index if index is not None else None
+        if prev_s <= prev_l and curr_s > curr_l:
+            analysis["trend"] = 'Bullish'
+            confirmed_crossover_index = i
+            break
+        elif prev_s >= prev_l and curr_s < curr_l:
+            analysis["trend"] = 'Bearish'
+            confirmed_crossover_index = i
+            break
+
+    if confirmed_crossover_index is not None:
+        # Calculate bars since: (index of last closed candle) - (index of crossover candle)
+        analysis["bars_since_confirmed"] = (len(df) - 2) - confirmed_crossover_index
+
+    # --- 2. Analyze the Live Candle State ---
+    last_closed_short = df['ema_short'].iloc[-2]
+    live_short = df['ema_short'].iloc[-1]
+    last_closed_long = df['ema_long'].iloc[-2]
+    live_long = df['ema_long'].iloc[-1]
+
+    # Determine the current live status
+    analysis["live_status"] = "Short > Long" if live_short > live_long else "Short < Long"
+
+    # Detect if a crossover is happening *right now*
+    if last_closed_short <= last_closed_long and live_short > live_long:
+        analysis["live_crossover_detected"] = 'Bullish'
+    elif last_closed_short >= last_closed_long and live_short < live_long:
+        analysis["live_crossover_detected"] = 'Bearish'
+        
+    return analysis
+
+
+# --- Redis Caching Logic ---
+
+def save_state_to_redis(symbol: str, timeframe: str, df: pd.DataFrame, last_signal_state: dict):
+    """Saves the DataFrame and last signal state to Redis."""
+    if not redis_client: return
+    redis_key = f"screener_state:{symbol}:{timeframe}"
+    data_to_save = {
+        "df_json": df.to_json(orient='split'),
+        "last_signal_state": json.dumps(last_signal_state)
+    }
+    with redis_client.pipeline() as pipe:
+        pipe.hset(redis_key, mapping=data_to_save)
+        pipe.expire(redis_key, 3 * 24 * 60 * 60) # 3-day expiry
+        pipe.execute()
+    logger.debug(f"Saved state for {symbol}-{timeframe} to Redis.")
+
+def load_state_from_redis(symbol: str, timeframe: str) -> tuple[pd.DataFrame | None, dict | None]:
+    """Loads the DataFrame and last signal state from Redis."""
+    if not redis_client: return None, None
+    redis_key = f"screener_state:{symbol}:{timeframe}"
+    saved_data = redis_client.hgetall(redis_key)
     
-    return {"status": trend, "bars_since": bars_since, "index": index}
-# --- All Symbols Fetching & Caching ---
+    if not saved_data:
+        return None, None
 
-# Simple in-memory cache to hold the master list of symbols
-_all_symbols_cache = {
-    "symbols": [],
-    "timestamp": 0
-}
-CACHE_DURATION_SECONDS = 4 * 60 * 60 # Cache for 4 hours
-
-async def _fetch_all_symbols_from_api():
-    """
-    Fetches all product symbols from Delta Exchange API asynchronously.
-    Excludes options ('C-', 'P-') and MOVE contracts ('MV-').
-    """
-    url = "https://api.india.delta.exchange/v2/products"
     try:
-        response = await client.get(url, headers={'Accept': 'application/json'}, timeout=10.0)
-        response.raise_for_status()
-        products = response.json().get('result', [])
-        
-        symbols = [
-            p['symbol'] for p in products
-            if not (p['symbol'].startswith(('C-', 'P-', 'MV-')))
-        ]
-        return symbols
-    except Exception as exc:
-        logger.error(f"Error fetching all symbols from API: {exc}")
-        return []
+        df = pd.read_json(saved_data['df_json'], orient='split')
+        df.index = df.index.tz_localize('UTC') # Restore timezone
+        last_signal_state = json.loads(saved_data['last_signal_state'])
+        logger.info(f"Loaded state for {symbol}-{timeframe} from Redis.")
+        return df, last_signal_state
+    except Exception as e:
+        logger.error(f"Error decoding Redis state for {symbol}-{timeframe}: {e}")
+        return None, None
+
+
+# --- Symbol & Watchlist Management ---
+_all_symbols_cache = {"symbols": [], "timestamp": 0}
+CACHE_DURATION_SECONDS = 4 * 60 * 60
 
 async def get_all_symbols_cached():
-    """
-    Returns a list of all symbols, using a time-based cache to avoid
-    hitting the exchange API on every request.
-    """
     now = time.time()
-    is_cache_stale = (now - _all_symbols_cache["timestamp"]) > CACHE_DURATION_SECONDS
-    
-    if not _all_symbols_cache["symbols"] or is_cache_stale:
-        logger.info("Cache is stale or empty. Fetching fresh list of all symbols...")
-        symbols = await _fetch_all_symbols_from_api()
-        if symbols: # Only update cache if the fetch was successful
-            _all_symbols_cache["symbols"] = symbols
-            _all_symbols_cache["timestamp"] = now
-    else:
-        logger.info("Returning all symbols from cache.")
-        
+    if not _all_symbols_cache["symbols"] or (now - _all_symbols_cache["timestamp"]) > CACHE_DURATION_SECONDS:
+        logger.info("Fetching fresh list of all symbols...")
+        url = "https://api.india.delta.exchange/v2/products"
+        try:
+            response = await client.get(url, headers={'Accept': 'application/json'}, timeout=10.0)
+            response.raise_for_status()
+            products = response.json().get('result', [])
+            symbols = [p['symbol'] for p in products if not p['symbol'].startswith(('C-', 'P-', 'MV-'))]
+            if symbols:
+                _all_symbols_cache["symbols"] = symbols
+                _all_symbols_cache["timestamp"] = now
+        except Exception as exc:
+            logger.error(f"Error fetching all symbols from API: {exc}")
     return _all_symbols_cache["symbols"]
 
-# --- Watchlist File Management ---
-
-def _read_watchlist_data():
-    """Reads the watchlist.json file and returns the list of symbols."""
-    if not WATCHLIST_FILE.exists():
-        return []
-    with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
+def get_current_watchlist():
+    if not WATCHLIST_FILE.exists(): return []
+    with open(WATCHLIST_FILE, "r") as f:
         try:
             data = json.load(f)
-            # Handle both formats: {"symbols": [...]} and [...]
-            if isinstance(data, dict):
-                return data.get("symbols", [])
-            elif isinstance(data, list):
-                return data
+            return data.get("symbols", []) if isinstance(data, dict) else data
         except json.JSONDecodeError:
-            return [] # Return empty list if file is empty or malformed
-    return []
+            return []
 
 def _write_watchlist_data(symbols: list):
-    """Writes a list of symbols to the watchlist.json file."""
-    with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
-        # We will now standardize on the dictionary format for writing
+    with open(WATCHLIST_FILE, "w") as f:
         json.dump({"symbols": sorted(list(set(symbols)))}, f, indent=2)
 
-def get_current_watchlist():
-    """Returns the current list of symbols from the watchlist."""
-    return _read_watchlist_data()
-
 def add_symbol_to_watchlist(symbol: str):
-    """Adds a new symbol to the watchlist if it doesn't already exist."""
-    current_symbols = _read_watchlist_data()
+    current_symbols = get_current_watchlist()
     if symbol and symbol not in current_symbols:
         current_symbols.append(symbol)
         _write_watchlist_data(current_symbols)
     return get_current_watchlist()
 
 def remove_symbol_from_watchlist(symbol_to_remove: str):
-    """Removes a symbol from the watchlist."""
-    current_symbols = _read_watchlist_data()
-    # Use a list comprehension for a clean removal
+    current_symbols = get_current_watchlist()
     updated_symbols = [s for s in current_symbols if s != symbol_to_remove]
     _write_watchlist_data(updated_symbols)
-    return get_current_watchlist()
+    return updated_symbols

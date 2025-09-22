@@ -1,109 +1,98 @@
-import json
-import time
+# fast.py
 import asyncio
-from pathlib import Path
-from fastapi import FastAPI, Query ,WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from contextlib import asynccontextmanager
-
+import time
 import helpers
 import config
 import websocket_manager
+# Import the shared state objects that connect the API to the live engine
+from shared_state import candle_managers_state, websocket_command_queue
 
-class SymbolRequest(BaseModel):
-    symbol: str
-
+# --- Connection Manager for Frontend Clients ---
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
-
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)
-
     async def broadcast(self, message: str):
         for connection in self.active_connections:
             await connection.send_text(message)
 
 manager = ConnectionManager()
 
+# --- Concurrency Limiter ---
+API_CONCURRENCY_LIMIT = 5
+semaphore = asyncio.Semaphore(API_CONCURRENCY_LIMIT)
+
+# --- App Lifespan (Starts/Stops Background Task) ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Server startup: Starting WebSocket client...")
-    # Pass both the manager and the semaphore to the background task
     task = asyncio.create_task(websocket_manager.start_websocket_client(manager, semaphore))
     yield
     print("Server shutdown: Stopping WebSocket client...")
     task.cancel()
 
+# --- FastAPI App Initialization ---
 app = FastAPI(lifespan=lifespan)
-
-origins = [
-    "http://127.0.0.1:5500",
-    "http://localhost:5500",
-]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["http://127.0.0.1:5500", "http://localhost:5500"], # Add your frontend origin
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"], # <-- Corrected argument name
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+# --- Pydantic Models ---
+class SymbolRequest(BaseModel):
+    symbol: str
 
 class ScreenerRequest(BaseModel):
     symbols: Optional[List[str]] = None
 
-# This semaphore will allow a maximum of 5 requests to run at the same time.
-API_CONCURRENCY_LIMIT = 5
-semaphore = asyncio.Semaphore(API_CONCURRENCY_LIMIT)
-
+# --- WebSocket Endpoint ---
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()
+            await websocket.receive_text() # Keep connection alive
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+# --- API Endpoints ---
 @app.post("/screener_data")
 async def screener_data(request: ScreenerRequest):
-    # Use the helper function to get the watchlist for consistency
-    symbols_to_scan = request.symbols if request.symbols is not None else helpers.get_current_watchlist()
-    now = int(time.time())
-    start_time = 1
-
-    tasks, task_metadata = [], []
+    """
+    Instantly retrieves the latest signal data from the in-memory state.
+    This endpoint is now extremely fast as it does not make any external API calls.
+    """
+    symbols_to_scan = request.symbols or helpers.get_current_watchlist()
+    
+    response_data = []
     for symbol in symbols_to_scan:
+        timeframe_signals = {}
         for tf in config.TIMEFRAMES:
-            # Pass the semaphore to the helper function for rate limiting
-            task = helpers.fetch_historical_candles(symbol, tf, start_time, now, semaphore)
-            tasks.append(task)
-            task_metadata.append({"symbol": symbol, "tf": tf})
-
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    symbol_results = {symbol: {} for symbol in symbols_to_scan}
-    for i, res_df in enumerate(results):
-        meta = task_metadata[i]
-        symbol, tf = meta["symbol"], meta["tf"]
+            # Look up the manager instance in our shared state
+            manager_instance = candle_managers_state.get((symbol, tf))
+            
+            if manager_instance and manager_instance.last_signal_state:
+                timeframe_signals[tf] = manager_instance.last_signal_state
+            else:
+                # Fallback if the data isn't loaded yet
+                timeframe_signals[tf] = {
+                    "trend": "Loading...", "bars_since_confirmed": None,
+                    "live_status": "N/A", "live_crossover_detected": None
+                }
+        response_data.append({"name": symbol, "timeframes": timeframe_signals})
         
-        signal_data = {"status": "N/A", "bars_since": None}
-
-        if not isinstance(res_df, Exception) and not res_df.empty:
-            signal_data = helpers.get_ema_signal(res_df, {})
-        
-        symbol_results[symbol][tf] = signal_data
-
-    response_data = [
-        {"name": symbol, "timeframes": tf_signals}
-        for symbol, tf_signals in symbol_results.items()
-    ]
     return {"crypto": response_data}
 
 @app.get("/all-symbols")
@@ -117,38 +106,32 @@ async def get_watchlist():
 
 @app.post("/watchlist")
 async def add_to_watchlist(request: SymbolRequest):
+    """Adds a symbol to the file and sends a 'subscribe' command to the live engine."""
     updated_watchlist = helpers.add_symbol_to_watchlist(request.symbol)
+    # This command tells the background process to start listening to this symbol
+    await websocket_command_queue.put(('subscribe', request.symbol))
     return {"status": "success", "watchlist": updated_watchlist}
 
 @app.delete("/watchlist/{symbol_name}")
 async def delete_from_watchlist(symbol_name: str):
+    """Removes a symbol from the file and sends an 'unsubscribe' command."""
     updated_watchlist = helpers.remove_symbol_from_watchlist(symbol_name)
+    # This command tells the background process to stop listening to this symbol
+    await websocket_command_queue.put(('unsubscribe', symbol_name))
     return {"status": "success", "watchlist": updated_watchlist}
 
-@app.get("/historical-crossovers")
-async def historical_crossovers(symbol: str = Query(...), timeframe: str = Query(...)):
-    now = int(time.time())
-    start_time = 1
-    
-    # --- UPDATE IS HERE: Pass the semaphore ---
-    df = await helpers.fetch_historical_candles(symbol, timeframe, start_time, now, semaphore)
-    
-    if df.empty:
-        return {"crossovers": []}
-
-    crossovers = helpers.get_historical_ema_crossovers(df, symbol, timeframe)
-    return {"crossovers": crossovers}
-
+# This endpoint is also updated to use the new, more powerful analysis function
 @app.get("/latest-signal")
 async def latest_signal(symbol: str = Query(...), timeframe: str = Query(...)):
-    now = int(time.time())
-    start_time = 1
+    manager_instance = candle_managers_state.get((symbol, timeframe))
+    if manager_instance and manager_instance.last_signal_state:
+        return {"signal": manager_instance.last_signal_state}
     
-    # --- UPDATE IS HERE: Pass the semaphore ---
-    df = await helpers.fetch_historical_candles(symbol, timeframe, start_time, now, semaphore)
-
+    # Fallback to fetch manually if not on watchlist (could be removed if not needed)
+    now = int(time.time())
+    df = await helpers.fetch_historical_candles(symbol, timeframe, 1, now, semaphore)
     if df.empty:
         return {"signal": None}
-
-    signal = helpers.get_ema_signal(df, {})
+    
+    signal = helpers.analyze_ema_state(df)
     return {"signal": signal}
