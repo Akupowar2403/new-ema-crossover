@@ -135,3 +135,10 @@ async def latest_signal(symbol: str = Query(...), timeframe: str = Query(...)):
     
     signal = helpers.analyze_ema_state(df)
     return {"signal": signal}
+
+@app.get("/historical-crossovers")
+async def historical_crossovers(symbol: str = Query(...), timeframe: str = Query(...)):
+    now = int(time.time())
+    df = await helpers.fetch_historical_candles(symbol, timeframe, 1, now, semaphore)
+    if df.empty: return {"crossovers": []}
+    return {"crossovers": helpers.find_all_crossovers(df)}

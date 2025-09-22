@@ -47,7 +47,34 @@ header h1 {
 .controls select {
     margin-right: 20px;
 }
+/* Add this to your style.css file */
 
+/* This rule will apply to BOTH dropdowns in the controls section */
+.controls select {
+    background-color: var(--background-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 1em;
+}
+
+/* This rule will style the button to match */
+.controls button {
+    background-color: var(--background-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 1em;
+    cursor: pointer;
+    transition: background-color 0.2s; /* Adds a nice hover effect */
+}
+
+/* Optional: Add a hover effect for the button */
+.controls button:hover {
+    background-color: var(--border-color);
+}
 /* Tabs Styling */
 .tabs {
     overflow: hidden;

@@ -197,15 +197,25 @@ function populateTable(tableId, assetsData) {
     tbody.appendChild(fragment);
 }
 
-function populateSymbolDatalist(assets) {
-    const datalist = document.getElementById('symbol-datalist');
-    datalist.innerHTML = '';
-    assets.forEach(item => {
-        const option = document.createElement('option');
-        option.value = item;
-        datalist.appendChild(option);
-    });
+function populateSymbolDatalist(symbols) {
+    // This now correctly targets the <select> dropdown
+    const selectElement = document.getElementById('symbol-select'); 
+    
+    // Check if the element exists to prevent errors
+    if (selectElement) {
+        selectElement.innerHTML = ''; // Clear the "Loading..." message
+        
+        symbols.forEach(symbol => {
+            const option = document.createElement('option');
+            option.value = symbol;
+            option.textContent = symbol; // This sets the visible text in the dropdown
+            selectElement.appendChild(option);
+        });
+    } else {
+        console.error("Error: Could not find the dropdown with ID 'symbol-select'.");
+    }
 }
+
 
 function displayCrossovers(crossovers) {
     const container = document.getElementById('crossover-results');
@@ -309,8 +319,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     await runDataRefreshCycle(); 
 
     setInterval(runDataRefreshCycle, REFRESH_INTERVAL_MS);
-
-    addSearchFilter('search-input', 'crypto-table');
     
     document.getElementById('fetch-crossovers').addEventListener('click', async () => {
         const symbol = document.getElementById('symbol-search-input').value;
@@ -346,7 +354,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('watchlist-list').addEventListener('click', async (e) => {
         if (e.target.matches('.remove-symbol-btn')) {
-            const symbol = e.target.dataset.symbol;
+            const symbol = document.getElementById('symbol-select').value;
             const updatedWatchlist = await removeSymbolFromWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);

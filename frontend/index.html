@@ -10,18 +10,17 @@
 <body>
 
     <header>
-        <h1>📈 EMA Crossover Screener & Watchlist</h1>
+        <h1>📈 EMA Crossover Screener </h1>
         <p>Last Updated: <span id="last-updated">Never</span></p>
     </header>
 
     <main class="container">
 
         <section class="controls">
-            <label for="symbol-select">Symbol:</label>
-            <input id="symbol-search-input" list="symbol-datalist" placeholder="Search or select a symbol..." />
-            
-            <datalist id="symbol-datalist">
-                </datalist>
+        <label for="symbol-select">Symbol:</label>
+        <select id="symbol-select">
+            <option value="">Select Symbols...</option>
+        </select>
             <label for="timeframe-select">Timeframe:</label>
             <select id="timeframe-select">
                 <option value="1m">1m</option>
@@ -42,7 +41,6 @@
 
         <section id="Crypto" class="tab-content active">
             <h2>Crypto Pairs (Delta Exchange)</h2>
-            <input id="search-input" placeholder="Search symbol..." />
             <table id="crypto-table"></table>
         </section>
 
