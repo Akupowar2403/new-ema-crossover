@@ -92,7 +92,7 @@ async def screener_data(request: ScreenerRequest):
                     "live_status": "N/A", "live_crossover_detected": None
                 }
         response_data.append({"name": symbol, "timeframes": timeframe_signals})
-        
+    print("--- DATA BEING SENT TO FRONTEND ---", response_data)    
     return {"crypto": response_data}
 
 @app.get("/all-symbols")

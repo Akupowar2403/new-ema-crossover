@@ -158,6 +158,8 @@ function populateAllTables(data) {
     populateTable('crypto-table', data.crypto || []);
 }
 
+// In script.js, replace the entire populateTable function with this one.
+
 function populateTable(tableId, assetsData) {
     const table = document.getElementById(tableId);
     if (!table.querySelector('thead')) {
@@ -172,24 +174,30 @@ function populateTable(tableId, assetsData) {
     let tbody = table.querySelector('tbody') || table.createTBody();
     tbody.innerHTML = '';
     const fragment = document.createDocumentFragment();
+
     assetsData.forEach(asset => {
         const tr = document.createElement('tr');
-        // The data-symbol attribute is now on the <tr> for easier lookup
-        tr.dataset.symbol = asset.name; 
+        tr.dataset.symbol = asset.name;
+        
         let rowContent = `<td class="asset-name clickable" title="Add ${asset.name} to Watchlist">${asset.name} ➕</td>`;
+        
         TIME_FRAMES.forEach(tf => {
-            const signal = asset.timeframes?.[tf];
-            if (signal) {
-                const statusClass = signal.status.toLowerCase().replace(/\s+/g, '-');
-                const barsText = signal.bars_since !== null ? `(${signal.bars_since} bars)` : '';
-                const text = signal.status !== "Neutral" && signal.status !== "N/A"
-                    ? `${signal.status.substring(0, 4).toUpperCase()} ${barsText}`
-                    : signal.status;
-                rowContent += `<td class="${statusClass}">${text}</td>`;
-                checkForAlert(asset.name, tf, signal);
-            } else {
-                rowContent += `<td class="error">Error</td>`;
-            }
+            // --- THIS IS THE KEY FIX ---
+            // We now provide a default object if the signal data is missing or incomplete.
+            // This ensures 'signal' and 'signal.status' will NEVER be null or undefined.
+            const signal = asset.timeframes?.[tf] || { status: 'N/A', bars_since: null };
+
+            const status = signal.status || 'N/A'; // Extra safety
+            const bars_since = signal.bars_since;
+
+            const statusClass = status.toLowerCase().replace(/\s+/g, '-');
+            const barsText = bars_since !== null ? `(${bars_since} bars)` : '';
+            const text = status !== "Neutral" && status !== "N/A"
+                ? `${status.substring(0, 4).toUpperCase()} ${barsText}`
+                : status;
+            
+            rowContent += `<td class="${statusClass}">${text}</td>`;
+            checkForAlert(asset.name, tf, signal);
         });
         tr.innerHTML = rowContent;
         fragment.appendChild(tr);
@@ -321,7 +329,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(runDataRefreshCycle, REFRESH_INTERVAL_MS);
     
     document.getElementById('fetch-crossovers').addEventListener('click', async () => {
-        const symbol = document.getElementById('symbol-search-input').value;
+        const symbol = document.getElementById('symbol-select').value; // This is the corrected line
         const timeframe = document.getElementById('timeframe-select').value;
         const container = document.getElementById('crossover-results');
         container.innerHTML = '<p>Loading crossover data...</p>';
@@ -354,7 +362,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('watchlist-list').addEventListener('click', async (e) => {
         if (e.target.matches('.remove-symbol-btn')) {
-            const symbol = document.getElementById('symbol-select').value;
+            const symbol = e.target.dataset.symbol; // This is the corrected line
             const updatedWatchlist = await removeSymbolFromWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);

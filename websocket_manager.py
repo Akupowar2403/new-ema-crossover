@@ -10,7 +10,6 @@ import json
 from typing import Dict, Tuple
 from datetime import datetime
 import config
-# Import the shared state objects to connect with the API
 from shared_state import websocket_command_queue, candle_managers_state
 
 WEBSOCKET_URL = "wss://socket.india.delta.exchange"
@@ -19,13 +18,11 @@ class CandleManager:
     def __init__(self, symbol: str, timeframe: str, manager):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.manager = manager # This is the ConnectionManager for broadcasting to clients
+        self.manager = manager
         self.candles_df = pd.DataFrame()
-        self.last_signal_state = {} # Will hold the rich analysis dictionary
+        self.last_signal_state = {}
 
     async def initialize_history(self, semaphore: asyncio.Semaphore):
-        """Initializes candle history, prioritizing Redis cache before fetching from API."""
-        # --- NEW: Redis Caching Logic ---
         cached_df, cached_state = helpers.load_state_from_redis(self.symbol, self.timeframe)
         
         now = int(time.time())
@@ -35,10 +32,9 @@ class CandleManager:
             self.candles_df = cached_df
             self.last_signal_state = cached_state or {}
             last_timestamp = int(self.candles_df.index[-1].timestamp())
-            start_time = last_timestamp + 1 # Fetch only new candles since last cache
+            start_time = last_timestamp + 1
             helpers.logger.info(f"[{self.symbol}-{self.timeframe}] Loaded from cache. Fetching delta.")
 
-        # Fetch any candles that have occurred since the last cached entry
         if start_time < now:
             new_candles_df = await helpers.fetch_historical_candles(self.symbol, self.timeframe, start_time, now, semaphore)
             if not new_candles_df.empty:
@@ -46,16 +42,14 @@ class CandleManager:
                 self.candles_df = self.candles_df[~self.candles_df.index.duplicated(keep='last')]
                 self.candles_df.sort_index(inplace=True)
 
-        # Perform a full analysis and save the initial state
         if not self.candles_df.empty:
-            # --- NEW: Use the powerful analysis function ---
             self.last_signal_state = helpers.analyze_ema_state(self.candles_df)
             helpers.save_state_to_redis(self.symbol, self.timeframe, self.candles_df, self.last_signal_state)
             
-        helpers.logger.info(f"[{self.symbol}-{self.timeframe}] Initialized with trend: {self.last_signal_state.get('trend')}")
+        # --- FIX 1: Corrected log message to use 'status' ---
+        helpers.logger.info(f"[{self.symbol}-{self.timeframe}] Initialized with status: {self.last_signal_state.get('status')}")
 
     async def process_live_candle(self, msg: dict):
-        """Processes a live candle update, recalculates state, and broadcasts on confirmed changes."""
         ts_sec = msg.get('candle_start_time') // 1_000_000
         candle_timestamp = pd.to_datetime(ts_sec, unit='s').tz_localize('UTC')
         self.candles_df.loc[candle_timestamp] = {
@@ -64,32 +58,27 @@ class CandleManager:
             'volume': float(msg['volume'])
         }
       
-        # --- NEW: Get the rich, detailed signal state on every tick ---
         new_signal_state = helpers.analyze_ema_state(self.candles_df)
 
-        # Broadcast a notification only when the CONFIRMED trend changes
-        if new_signal_state.get('trend') != self.last_signal_state.get('trend') and new_signal_state.get('trend') != 'N/A':
-            helpers.logger.info(f"BROADCAST: New CONFIRMED trend for {self.symbol}-{self.timeframe}: {new_signal_state.get('trend')}")
+        # --- FIX 2: The Main Bug - Condition now correctly checks for a change in 'status' ---
+        if new_signal_state.get('status') != self.last_signal_state.get('status') and new_signal_state.get('status') != 'N/A':
+            helpers.logger.info(f"BROADCAST: New CONFIRMED status for {self.symbol}-{self.timeframe}: {new_signal_state.get('status')}")
             
             payload = {
                 "type": "new_signal",
                 "symbol": self.symbol,
                 "timeframe": self.timeframe,
-                "signal": new_signal_state # Send the new full state
+                "signal": new_signal_state
             }
             await self.manager.broadcast(json.dumps(payload))
-            # Save the new state to Redis only on confirmed changes
             helpers.save_state_to_redis(self.symbol, self.timeframe, self.candles_df, new_signal_state)
         
-        # Always update the in-memory state so the API has the latest "live_crossover_detected" info
         self.last_signal_state = new_signal_state
-
 
 def generate_signature(secret, message):
     return hmac.new(bytes(secret, 'utf-8'), bytes(message, 'utf-8'), hashlib.sha256).hexdigest()
 
 async def handle_commands(ws, manager, semaphore: asyncio.Semaphore):
-    """Listens to the queue and modifies the shared state and subscriptions."""
     while True:
         command, symbol = await websocket_command_queue.get()
         helpers.logger.info(f"Received command from API: {command} {symbol}")
@@ -99,11 +88,10 @@ async def handle_commands(ws, manager, semaphore: asyncio.Semaphore):
             await ws.send(json.dumps({"type": "subscribe", "payload": {"channels": channels}}))
             for tf in config.TIMEFRAMES:
                 key = (symbol, tf)
-                # --- NEW: Modifies the shared state directly ---
                 if key not in candle_managers_state:
                     manager_instance = CandleManager(symbol, tf, manager)
-                    await manager_instance.initialize_history(semaphore)
                     candle_managers_state[key] = manager_instance
+                    asyncio.create_task(manager_instance.initialize_history(semaphore))
         
         elif command == 'unsubscribe':
             await ws.send(json.dumps({"type": "unsubscribe", "payload": {"channels": channels}}))
@@ -113,12 +101,9 @@ async def handle_commands(ws, manager, semaphore: asyncio.Semaphore):
         
         websocket_command_queue.task_done()
 
-# In websocket_manager.py, replace the entire start_websocket_client function with this:
-
 async def start_websocket_client(manager, semaphore: asyncio.Semaphore):
     uri = WEBSOCKET_URL
     while True: 
-        # The 'try' statement starts here
         try:
             async with websockets.connect(uri) as ws:
                 helpers.logger.info("WebSocket connected. Authenticating...")
@@ -146,9 +131,7 @@ async def start_websocket_client(manager, semaphore: asyncio.Semaphore):
                     await asyncio.gather(*init_tasks)
                     helpers.logger.info("All historical data has been warmed up.")
                     
-                    # This is the line that was causing the "]" error. This is the corrected version.
                     channels = [{"name": f"candlestick_{tf}", "symbols": watchlist} for tf in config.TIMEFRAMES]
-                    
                     await ws.send(json.dumps({"type": "subscribe", "payload": {"channels": channels}}))
                     helpers.logger.info("Subscribed to initial watchlist channels.")
 
@@ -160,8 +143,6 @@ async def start_websocket_client(manager, semaphore: asyncio.Semaphore):
                             await manager_instance.process_live_candle(msg)
                 
                 command_handler_task.cancel()
-
-        # This is the required 'except' block that was missing
         except Exception as e:
             helpers.logger.error(f"WebSocket client error: {e}. Reconnecting in 30 seconds...")
             await asyncio.sleep(30)

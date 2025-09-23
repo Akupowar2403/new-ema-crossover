@@ -51,13 +51,21 @@ async def fetch_historical_candles(symbol: str, resolution: str, start: int, end
             if mad > 0: df = df[(df[col] - median).abs() < (10 * mad)]
     return df
 
+# In helpers.py, replace your existing analysis function with this one.
+
 def analyze_ema_state(df: pd.DataFrame) -> dict:
+    """
+    Analyzes candle data and returns a dictionary with keys
+    matching the frontend's expectations ('status', 'bars_since').
+    """
+    # This dictionary now has the correct keys: "status" and "bars_since"
     analysis = {
-        "status": "N/A", # Was 'trend'
-        "bars_since": None, # Was 'bars_since_confirmed'
+        "status": "N/A",
+        "bars_since": None,
         "live_status": "N/A",
         "live_crossover_detected": None
     }
+
     if len(df) < config.LONG_EMA_PERIOD + 2:
         return analysis
 
@@ -69,6 +77,7 @@ def analyze_ema_state(df: pd.DataFrame) -> dict:
     for i in range(len(df) - 2, 0, -1):
         prev_s, curr_s = df['ema_short'].iloc[i - 1], df['ema_short'].iloc[i]
         prev_l, curr_l = df['ema_long'].iloc[i - 1], df['ema_long'].iloc[i]
+        
         if prev_s <= prev_l and curr_s > curr_l:
             analysis["status"] = 'Bullish'
             confirmed_crossover_index = i
@@ -88,6 +97,7 @@ def analyze_ema_state(df: pd.DataFrame) -> dict:
         analysis["live_crossover_detected"] = 'Bullish'
     elif last_closed_short >= last_closed_long and live_short < live_long:
         analysis["live_crossover_detected"] = 'Bearish'
+        
     return analysis
 
 def find_all_crossovers(df: pd.DataFrame) -> list:
