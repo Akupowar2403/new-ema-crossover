@@ -98,12 +98,6 @@ def analyze_ema_state(df: pd.DataFrame) -> dict:
         
     return analysis
 
-# In helpers.py, replace the find_all_crossovers function
-
-# In helpers.py
-
-# In helpers.py
-
 def find_all_crossovers(df: pd.DataFrame, short_period: int = 9, long_period: int = 21, confirmation_periods: int = 1) -> list:
 
     if len(df) < long_period + confirmation_periods:
@@ -117,7 +111,6 @@ def find_all_crossovers(df: pd.DataFrame, short_period: int = 9, long_period: in
     df[long_ema_col] = df['close'].ewm(span=long_period, adjust=False).mean()
 
     crossovers = []
-    # Iterate up to the point where a full confirmation is possible
     for i in range(1, len(df) - confirmation_periods):
         prev_s = df[short_ema_col].iloc[i - 1]
         curr_s = df[short_ema_col].iloc[i]
@@ -127,31 +120,24 @@ def find_all_crossovers(df: pd.DataFrame, short_period: int = 9, long_period: in
         is_bullish_cross = prev_s <= prev_l and curr_s > curr_l
         is_bearish_cross = prev_s >= prev_l and curr_s < curr_l
 
-        # If no crossover occurred at this candle, skip to the next one
         if not (is_bullish_cross or is_bearish_cross):
             continue
 
-        # --- Confirmation Logic ---
-        # A crossover is only valid if the new trend holds for the confirmation period.
         confirmation_failed = False
         for j in range(1, confirmation_periods + 1):
             next_s = df[short_ema_col].iloc[i + j]
             next_l = df[long_ema_col].iloc[i + j]
 
-            # If we expect a bullish trend but the short EMA drops below, the confirmation fails.
             if is_bullish_cross and next_s < next_l:
                 confirmation_failed = True
                 break
-            # If we expect a bearish trend but the short EMA rises above, the confirmation fails.
             elif is_bearish_cross and next_s > next_l:
                 confirmation_failed = True
                 break
-        
-        # If the confirmation failed, ignore this crossover and move on.
+
         if confirmation_failed:
             continue
 
-        # If we reach here, the crossover is confirmed and valid.
         crossover_type = 'bullish' if is_bullish_cross else 'bearish'
         crossovers.append({
             "type": crossover_type,

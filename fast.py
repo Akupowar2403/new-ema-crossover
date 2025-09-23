@@ -1,4 +1,4 @@
-# fast.py
+
 import asyncio
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect,HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +10,10 @@ import helpers
 import config
 import websocket_manager
 from shared_state import candle_managers_state, websocket_command_queue
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os
+
 
 class ConnectionManager:
     def __init__(self):
@@ -50,6 +54,9 @@ class SymbolRequest(BaseModel):
 
 class ScreenerRequest(BaseModel):
     symbols: Optional[List[str]] = None
+
+app.mount("/static", StaticFiles(directory="frontend"), name="static")
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -131,10 +138,6 @@ async def latest_signal(symbol: str = Query(...), timeframe: str = Query(...)):
     signal = helpers.analyze_ema_state(df)
     return {"signal": signal}
 
-# In fast.py, replace the historical_crossovers function
-
-# In fast.py, replace the historical_crossovers function
-
 @app.get("/historical-crossovers")
 async def historical_crossovers(
     symbol: str = Query(...), 
@@ -147,25 +150,25 @@ async def historical_crossovers(
     """
     df = None
     
-    # Path A: Check for live, in-memory data first
     manager_instance = candle_managers_state.get((symbol, timeframe))
     if manager_instance and not manager_instance.candles_df.empty:
         helpers.logger.info(f"Using LIVE data for {symbol}-{timeframe} crossover check.")
         df = manager_instance.candles_df
-    
-    # Path B: Fallback to fetching from the exchange if not actively monitored
+
     else:
         helpers.logger.info(f"Fetching HISTORICAL data for {symbol}-{timeframe} crossover check.")
         now = int(time.time())
         df = await helpers.fetch_historical_candles(symbol, timeframe, 1, now, semaphore)
 
-    # Analyze the data and return the last 10 results
     if df is None or df.empty:
         return {"crossovers": []}
 
     all_crossovers = helpers.find_all_crossovers(df, confirmation_periods=confirmation)
     
-    # Select only the last 10 events from the full list
     recent_crossovers = all_crossovers[-10:]
     
     return {"crossovers": recent_crossovers}
+
+@app.get("/")
+async def read_index():
+    return FileResponse('frontend/index.html')
