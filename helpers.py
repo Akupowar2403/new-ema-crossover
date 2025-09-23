@@ -98,28 +98,67 @@ def analyze_ema_state(df: pd.DataFrame) -> dict:
         
     return analysis
 
-def find_all_crossovers(df: pd.DataFrame) -> list:
-    if len(df) < config.LONG_EMA_PERIOD:
+# In helpers.py, replace the find_all_crossovers function
+
+# In helpers.py
+
+# In helpers.py
+
+def find_all_crossovers(df: pd.DataFrame, short_period: int = 9, long_period: int = 21, confirmation_periods: int = 1) -> list:
+
+    if len(df) < long_period + confirmation_periods:
         return []
 
-    df = df.copy()
-    df['ema_short'] = df['close'].ewm(span=config.SHORT_EMA_PERIOD, adjust=False).mean()
-    df['ema_long'] = df['close'].ewm(span=config.LONG_EMA_PERIOD, adjust=False).mean()
+    df = df.sort_index().copy()
+    short_ema_col = f"ema_{short_period}"
+    long_ema_col = f"ema_{long_period}"
+
+    df[short_ema_col] = df['close'].ewm(span=short_period, adjust=False).mean()
+    df[long_ema_col] = df['close'].ewm(span=long_period, adjust=False).mean()
 
     crossovers = []
-    for i in range(1, len(df)):
-        prev_s, curr_s = df['ema_short'].iloc[i - 1], df['ema_short'].iloc[i]
-        prev_l, curr_l = df['ema_long'].iloc[i - 1], df['ema_long'].iloc[i]
+    # Iterate up to the point where a full confirmation is possible
+    for i in range(1, len(df) - confirmation_periods):
+        prev_s = df[short_ema_col].iloc[i - 1]
+        curr_s = df[short_ema_col].iloc[i]
+        prev_l = df[long_ema_col].iloc[i - 1]
+        curr_l = df[long_ema_col].iloc[i]
 
-        event = None
-        if prev_s <= prev_l and curr_s > curr_l:
-            event = {"type": "bullish", "close": df['close'].iloc[i]}
-        elif prev_s >= prev_l and curr_s < curr_l:
-            event = {"type": "bearish", "close": df['close'].iloc[i]}
+        is_bullish_cross = prev_s <= prev_l and curr_s > curr_l
+        is_bearish_cross = prev_s >= prev_l and curr_s < curr_l
 
-        if event:
-            event["timestamp"] = int(df.index[i].timestamp())
-            crossovers.append(event)
+        # If no crossover occurred at this candle, skip to the next one
+        if not (is_bullish_cross or is_bearish_cross):
+            continue
+
+        # --- Confirmation Logic ---
+        # A crossover is only valid if the new trend holds for the confirmation period.
+        confirmation_failed = False
+        for j in range(1, confirmation_periods + 1):
+            next_s = df[short_ema_col].iloc[i + j]
+            next_l = df[long_ema_col].iloc[i + j]
+
+            # If we expect a bullish trend but the short EMA drops below, the confirmation fails.
+            if is_bullish_cross and next_s < next_l:
+                confirmation_failed = True
+                break
+            # If we expect a bearish trend but the short EMA rises above, the confirmation fails.
+            elif is_bearish_cross and next_s > next_l:
+                confirmation_failed = True
+                break
+        
+        # If the confirmation failed, ignore this crossover and move on.
+        if confirmation_failed:
+            continue
+
+        # If we reach here, the crossover is confirmed and valid.
+        crossover_type = 'bullish' if is_bullish_cross else 'bearish'
+        crossovers.append({
+            "type": crossover_type,
+            "close": df['close'].iloc[i],
+            "timestamp": int(df.index[i].timestamp()),
+        })
+            
     return crossovers
 
 def save_state_to_redis(symbol: str, timeframe: str, df: pd.DataFrame, last_signal_state: dict):

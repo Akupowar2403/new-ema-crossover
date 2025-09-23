@@ -131,9 +131,41 @@ async def latest_signal(symbol: str = Query(...), timeframe: str = Query(...)):
     signal = helpers.analyze_ema_state(df)
     return {"signal": signal}
 
+# In fast.py, replace the historical_crossovers function
+
+# In fast.py, replace the historical_crossovers function
+
 @app.get("/historical-crossovers")
-async def historical_crossovers(symbol: str = Query(...), timeframe: str = Query(...)):
-    now = int(time.time())
-    df = await helpers.fetch_historical_candles(symbol, timeframe, 1, now, semaphore)
-    if df.empty: return {"crossovers": []}
-    return {"crossovers": helpers.find_all_crossovers(df)}
+async def historical_crossovers(
+    symbol: str = Query(...), 
+    timeframe: str = Query(...),
+    confirmation: int = Query(1, ge=0)
+):
+    """
+    A "smart" endpoint that finds the 10 most recent confirmed crossovers.
+    It prioritizes live, in-memory data for accuracy and speed.
+    """
+    df = None
+    
+    # Path A: Check for live, in-memory data first
+    manager_instance = candle_managers_state.get((symbol, timeframe))
+    if manager_instance and not manager_instance.candles_df.empty:
+        helpers.logger.info(f"Using LIVE data for {symbol}-{timeframe} crossover check.")
+        df = manager_instance.candles_df
+    
+    # Path B: Fallback to fetching from the exchange if not actively monitored
+    else:
+        helpers.logger.info(f"Fetching HISTORICAL data for {symbol}-{timeframe} crossover check.")
+        now = int(time.time())
+        df = await helpers.fetch_historical_candles(symbol, timeframe, 1, now, semaphore)
+
+    # Analyze the data and return the last 10 results
+    if df is None or df.empty:
+        return {"crossovers": []}
+
+    all_crossovers = helpers.find_all_crossovers(df, confirmation_periods=confirmation)
+    
+    # Select only the last 10 events from the full list
+    recent_crossovers = all_crossovers[-10:]
+    
+    return {"crossovers": recent_crossovers}

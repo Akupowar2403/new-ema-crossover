@@ -23,6 +23,7 @@ class CandleManager:
         self.last_signal_state = {}
 
     async def initialize_history(self, semaphore: asyncio.Semaphore):
+        
         cached_df, cached_state = helpers.load_state_from_redis(self.symbol, self.timeframe)
         
         now = int(time.time())

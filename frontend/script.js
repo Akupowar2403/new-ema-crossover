@@ -158,7 +158,31 @@ function populateAllTables(data) {
     populateTable('crypto-table', data.crypto || []);
 }
 
-// In script.js, replace the entire populateTable function with this one.
+
+function updateSymbolDropdown(watchlistSymbols) {
+    const selectElement = document.getElementById('symbol-select');
+    if (!selectElement) return;
+
+    const currentSelection = selectElement.value;
+    selectElement.innerHTML = ''; 
+
+    if (watchlistSymbols.length === 0) {
+        selectElement.innerHTML = '<option value="">Add a symbol to your watchlist</option>';
+        return;
+    }
+
+    watchlistSymbols.forEach(symbol => {
+        const option = document.createElement('option');
+        option.value = symbol;
+        option.textContent = symbol;
+        selectElement.appendChild(option);
+    });
+
+    if (watchlistSymbols.includes(currentSelection)) {
+        selectElement.value = currentSelection;
+    }
+}
+
 
 function populateTable(tableId, assetsData) {
     const table = document.getElementById(tableId);
@@ -182,11 +206,9 @@ function populateTable(tableId, assetsData) {
         let rowContent = `<td class="asset-name clickable" title="Add ${asset.name} to Watchlist">${asset.name} ➕</td>`;
         
         TIME_FRAMES.forEach(tf => {
-            // We now provide a default object if the signal data is missing or incomplete.
-            // This ensures 'signal' and 'signal.status' will NEVER be null or undefined.
             const signal = asset.timeframes?.[tf] || { status: 'N/A', bars_since: null };
 
-            const status = signal.status || 'N/A'; // Extra safety
+            const status = signal.status || 'N/A'; 
             const bars_since = signal.bars_since;
 
             const statusClass = status.toLowerCase().replace(/\s+/g, '-');
@@ -307,6 +329,7 @@ async function runDataRefreshCycle() {
     const watchlist = await fetchWatchlist();
     if (watchlist === null) return; 
     
+    updateSymbolDropdown(watchlist); 
     renderWatchlist(watchlist);
 
     const screenerData = await fetchScreenerData(watchlist);
@@ -320,13 +343,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     connectWebSocket();
     
     await fetchAllSymbols(); 
-    populateSymbolDatalist(masterSymbolList);
     await runDataRefreshCycle(); 
 
     setInterval(runDataRefreshCycle, REFRESH_INTERVAL_MS);
     
     document.getElementById('fetch-crossovers').addEventListener('click', async () => {
-        const symbol = document.getElementById('symbol-select').value; // This is the corrected line
+        const symbol = document.getElementById('symbol-select').value; 
         const timeframe = document.getElementById('timeframe-select').value;
         const container = document.getElementById('crossover-results');
         container.innerHTML = '<p>Loading crossover data...</p>';
@@ -351,6 +373,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const updatedWatchlist = await addSymbolToWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);
+                updateSymbolDropdown(updatedWatchlist);
                 input.value = '';
                 await runDataRefreshCycle();
             }
@@ -359,10 +382,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('watchlist-list').addEventListener('click', async (e) => {
         if (e.target.matches('.remove-symbol-btn')) {
-            const symbol = e.target.dataset.symbol; // This is the corrected line
+            const symbol = e.target.dataset.symbol; 
             const updatedWatchlist = await removeSymbolFromWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);
+                updateSymbolDropdown(updatedWatchlist);
                 await runDataRefreshCycle();
             }
         }
