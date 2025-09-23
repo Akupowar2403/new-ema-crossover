@@ -1,6 +1,6 @@
 # fast.py
 import asyncio
-from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect,HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -95,9 +95,17 @@ async def get_all_symbols():
 async def get_watchlist():
     return {"symbols": helpers.get_current_watchlist()}
 
+
 @app.post("/watchlist")
 async def add_to_watchlist(request: SymbolRequest):
-    """Adds a symbol to the file and sends a 'subscribe' command to the live engine."""
+    """
+    Validates the symbol against the master list before adding it to the watchlist.
+    """
+    all_symbols = await helpers.get_all_symbols_cached()
+
+    if request.symbol not in all_symbols:
+        raise HTTPException(status_code=400, detail=f"Symbol '{request.symbol}' is not a valid symbol.")
+    
     updated_watchlist = helpers.add_symbol_to_watchlist(request.symbol)
     await websocket_command_queue.put(('subscribe', request.symbol))
     return {"status": "success", "watchlist": updated_watchlist}
