@@ -1,4 +1,4 @@
-# 📈 EMA Crossover Screener<b1>
+# 📈 EMA Crossover Screener<br>
 A real-time cryptocurrency screener that monitors Exponential Moving Average (EMA) crossovers for multiple symbols and timeframes. The application features a high-performance Python backend powered by FastAPI and a dynamic, interactive web-based frontend.
 
 ## ✨ Features
@@ -22,18 +22,18 @@ Backend: Python, FastAPI, Uvicorn, Pandas, Redis, HTTPX, WebSockets
 Frontend: HTML5, CSS3, Vanilla JavaScript
 
 ## 📂 Project Structure
-NEW-EMA-CROSSOVER/<b1>
-├── frontend/<b1>
-│   ├── index.html<b1>
-│   ├── style.css<b1>
-│   └── script.js<b1>
-├── fast.py                 # FastAPI server and API endpoints<b1>
-├── helpers.py              # Core logic for data fetching, analysis, caching<b1>
-├── websocket_manager.py    # Manages the live connection to the exchange<b1>
-├── shared_state.py         # Connects the API and WebSocket manager<b1>
-├── config.py               # Configuration file (API keys, settings)<b1>
-├── requirements.txt        # Python dependencies<b1>
-└── watchlist.json          # Stores your saved symbols<b1>
+NEW-EMA-CROSSOVER/<br>
+├── frontend/<br>
+│   ├── index.html<br>
+│   ├── style.css<br>
+│   └── script.js<br>
+├── fast.py                 # FastAPI server and API endpoints<br>
+├── helpers.py              # Core logic for data fetching, analysis, caching<br>
+├── websocket_manager.py    # Manages the live connection to the exchange<br>
+├── shared_state.py         # Connects the API and WebSocket manager<br>
+├── config.py               # Configuration file (API keys, settings)<br>
+├── requirements.txt        # Python dependencies<br>
+└── watchlist.json          # Stores your saved symbols<br>
 
 ## 🚀 Setup and Installation
 Prerequisites
@@ -72,7 +72,7 @@ config.py Template:
 
 Python
 
-config.py<b1>
+config.py<br>
 
 1. Delta Exchange API Credentials:
 API_KEY = "YOUR_API_KEY_HERE"
@@ -90,19 +90,20 @@ TIMEFRAMES = ["1m", "15m", "1h", "4h", "1d"]
 You will need two separate terminals to run the backend and frontend servers.
 
 1. Start the Backend Server
-Make sure your Redis server is running. Then, from the main project directory (NEW-EMA-CROSSOVER/), run:<b1>
+Make sure your Redis server is running. Then, from the main project directory (NEW-EMA-CROSSOVER/), run:<br>
 
 Bash
 
-uvicorn fast:app --reload<b1>
+uvicorn fast:app --reload<br>
+
 2. Start the Frontend Server
-Open a new terminal, navigate into the frontend directory, and start Python's simple HTTP server:,<b1>
+Open a new terminal, navigate into the frontend directory, and start Python's simple HTTP server:,<br>
 
 Bash
 
 cd frontend
 python -m http.server 8000
-(Note: We specify port 8000 to match the backend and avoid any potential CORS issues).<b1>
+(Note: We specify port 8000 to match the backend and avoid any potential CORS issues).<br>
 
 3. Access the Screener
 Open your web browser and navigate to:
