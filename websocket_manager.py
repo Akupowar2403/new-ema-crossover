@@ -45,8 +45,7 @@ class CandleManager:
         if not self.candles_df.empty:
             self.last_signal_state = helpers.analyze_ema_state(self.candles_df)
             helpers.save_state_to_redis(self.symbol, self.timeframe, self.candles_df, self.last_signal_state)
-            
-        # --- FIX 1: Corrected log message to use 'status' ---
+
         helpers.logger.info(f"[{self.symbol}-{self.timeframe}] Initialized with status: {self.last_signal_state.get('status')}")
 
     async def process_live_candle(self, msg: dict):
@@ -60,7 +59,6 @@ class CandleManager:
       
         new_signal_state = helpers.analyze_ema_state(self.candles_df)
 
-        # --- FIX 2: The Main Bug - Condition now correctly checks for a change in 'status' ---
         if new_signal_state.get('status') != self.last_signal_state.get('status') and new_signal_state.get('status') != 'N/A':
             helpers.logger.info(f"BROADCAST: New CONFIRMED status for {self.symbol}-{self.timeframe}: {new_signal_state.get('status')}")
             

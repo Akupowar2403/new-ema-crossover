@@ -51,14 +51,12 @@ async def fetch_historical_candles(symbol: str, resolution: str, start: int, end
             if mad > 0: df = df[(df[col] - median).abs() < (10 * mad)]
     return df
 
-# In helpers.py, replace your existing analysis function with this one.
 
 def analyze_ema_state(df: pd.DataFrame) -> dict:
     """
     Analyzes candle data and returns a dictionary with keys
     matching the frontend's expectations ('status', 'bars_since').
     """
-    # This dictionary now has the correct keys: "status" and "bars_since"
     analysis = {
         "status": "N/A",
         "bars_since": None,
@@ -124,7 +122,6 @@ def find_all_crossovers(df: pd.DataFrame) -> list:
             crossovers.append(event)
     return crossovers
 
-# ... (Redis, Symbol, and Watchlist functions are unchanged)
 def save_state_to_redis(symbol: str, timeframe: str, df: pd.DataFrame, last_signal_state: dict):
     if not redis_client: return
     redis_key = f"screener_state:{symbol}:{timeframe}"

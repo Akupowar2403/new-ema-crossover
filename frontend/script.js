@@ -182,7 +182,6 @@ function populateTable(tableId, assetsData) {
         let rowContent = `<td class="asset-name clickable" title="Add ${asset.name} to Watchlist">${asset.name} ➕</td>`;
         
         TIME_FRAMES.forEach(tf => {
-            // --- THIS IS THE KEY FIX ---
             // We now provide a default object if the signal data is missing or incomplete.
             // This ensures 'signal' and 'signal.status' will NEVER be null or undefined.
             const signal = asset.timeframes?.[tf] || { status: 'N/A', bars_since: null };
@@ -206,17 +205,15 @@ function populateTable(tableId, assetsData) {
 }
 
 function populateSymbolDatalist(symbols) {
-    // This now correctly targets the <select> dropdown
     const selectElement = document.getElementById('symbol-select'); 
     
-    // Check if the element exists to prevent errors
     if (selectElement) {
-        selectElement.innerHTML = ''; // Clear the "Loading..." message
+        selectElement.innerHTML = ''; 
         
         symbols.forEach(symbol => {
             const option = document.createElement('option');
             option.value = symbol;
-            option.textContent = symbol; // This sets the visible text in the dropdown
+            option.textContent = symbol; 
             selectElement.appendChild(option);
         });
     } else {
