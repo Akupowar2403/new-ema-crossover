@@ -1,4 +1,4 @@
-# websocket_manager.py
+
 import pandas as pd
 import helpers 
 import asyncio
@@ -7,6 +7,9 @@ import hmac
 import hashlib
 import time
 import json
+import asyncio
+import shared_state
+import pytz
 from typing import Dict, Tuple
 from datetime import datetime
 import config
@@ -49,6 +52,10 @@ class CandleManager:
 
         helpers.logger.info(f"[{self.symbol}-{self.timeframe}] Initialized with status: {self.last_signal_state.get('status')}")
 
+# In websocket_manager.py, inside the CandleManager class
+
+# In websocket_manager.py, inside the CandleManager class
+
     async def process_live_candle(self, msg: dict):
         ts_sec = msg.get('candle_start_time') // 1_000_000
         candle_timestamp = pd.to_datetime(ts_sec, unit='s').tz_localize('UTC')
@@ -57,22 +64,56 @@ class CandleManager:
             'low': float(msg['low']), 'close': float(msg['close']),
             'volume': float(msg['volume'])
         }
-      
+        
         new_signal_state = helpers.analyze_ema_state(self.candles_df)
+        
+        old_status = self.last_signal_state.get('status', 'N/A')
+        new_status = new_signal_state.get('status', 'N/A')
 
-        if new_signal_state.get('status') != self.last_signal_state.get('status') and new_signal_state.get('status') != 'N/A':
-            helpers.logger.info(f"BROADCAST: New CONFIRMED status for {self.symbol}-{self.timeframe}: {new_signal_state.get('status')}")
+        if new_status != old_status and new_status != 'N/A':
+            helpers.logger.info(f"ALERT: New confirmed crossover for {self.symbol}-{self.timeframe}: {new_status}")
             
-            payload = {
-                "type": "new_signal",
-                "symbol": self.symbol,
-                "timeframe": self.timeframe,
-                "signal": new_signal_state
+            # This part calculates the timestamp
+            crossover_timestamp = None
+            if new_signal_state.get("bars_since") == 0:
+                if len(self.candles_df.index) >= 2:
+                    crossover_time = self.candles_df.index[-2]
+                    crossover_timestamp = int(crossover_time.timestamp())
+
+            # --- THIS IS THE UPDATED TELEGRAM LOGIC ---
+            if shared_state.alert_service:
+                crossover_time_str = "N/A"
+                if crossover_timestamp:
+                    # Convert Unix timestamp to a readable IST string
+                    ist_tz = pytz.timezone('Asia/Kolkata')
+                    utc_time = datetime.fromtimestamp(crossover_timestamp, tz=pytz.utc)
+                    ist_time = utc_time.astimezone(ist_tz)
+                    crossover_time_str = ist_time.strftime('%b %d, %Y %I:%M %p %Z')
+
+                # Add the crossover time to the message
+                telegram_message = (
+                    f"📈 *New Crossover Alert* 📈\n\n"
+                    f"*Symbol:* `{self.symbol}`\n"
+                    f"*Timeframe:* `{self.timeframe}`\n"
+                    f"*Status:* *{new_status}*\n"
+                    f"*Crossover Time:* `{crossover_time_str}`"
+                )
+                await asyncio.to_thread(
+                    shared_state.alert_service.send_signal_alert,
+                    telegram_message
+                )
+            
+            # This part sends the alert to the frontend (unchanged)
+            alert_payload = {
+                "type": "crossover_alert", "symbol": self.symbol, "timeframe": self.timeframe,
+                "status": new_status, "crossover_timestamp": crossover_timestamp
             }
-            await self.manager.broadcast(json.dumps(payload))
+            await self.manager.broadcast(json.dumps(alert_payload))
+            
             helpers.save_state_to_redis(self.symbol, self.timeframe, self.candles_df, new_signal_state)
         
         self.last_signal_state = new_signal_state
+
 
 def generate_signature(secret, message):
     return hmac.new(bytes(secret, 'utf-8'), bytes(message, 'utf-8'), hashlib.sha256).hexdigest()

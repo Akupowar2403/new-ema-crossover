@@ -15,13 +15,41 @@ function connectWebSocket() {
         console.log("WebSocket connection established.");
     };
 
-    ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === 'new_signal') {
-            console.log("Received new signal:", data);
-            updateTableCell(data.symbol, data.timeframe, data.signal);
+// In script.js
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    
+    if (data.type === 'crossover_alert') {
+        const alertList = document.getElementById('alerts-list');
+        
+        if (alertList.children.length === 1 && alertList.children[0].textContent.includes('No new alerts')) {
+            alertList.innerHTML = '';
         }
-    };
+
+        const newAlert = document.createElement('li');
+        const alertReceivedTime = new Date().toLocaleTimeString();
+        const crossoverEventTime = new Date(data.crossover_timestamp * 1000).toLocaleTimeString();
+        newAlert.textContent = `[${alertReceivedTime}] New ${data.status} crossover on ${data.symbol} (${data.timeframe}) confirmed at ${crossoverEventTime}.`;
+        
+        alertList.prepend(newAlert);
+
+        // --- THIS IS THE 30-SECOND POPUP LOGIC ---
+        const VISIBLE_DURATION_MS = 30000; // 30 seconds
+        const FADE_ANIMATION_MS = 500;     // 0.5 seconds (must match CSS transition)
+
+        // After 30 seconds, add the 'fade-out' class to start the animation
+        setTimeout(() => {
+            newAlert.classList.add('fade-out');
+        }, VISIBLE_DURATION_MS);
+
+        // After the animation is finished, remove the element completely from the page
+        setTimeout(() => {
+            newAlert.remove();
+        }, VISIBLE_DURATION_MS + FADE_ANIMATION_MS);
+        // --- END OF POPUP LOGIC ---
+    }
+};
 
     ws.onclose = () => {
         console.log("WebSocket connection closed. Reconnecting in 5 seconds...");
@@ -218,7 +246,7 @@ function populateTable(tableId, assetsData) {
                 : status;
             
             rowContent += `<td class="${statusClass}">${text}</td>`;
-            checkForAlert(asset.name, tf, signal);
+            
         });
         tr.innerHTML = rowContent;
         fragment.appendChild(tr);
@@ -347,15 +375,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     setInterval(runDataRefreshCycle, REFRESH_INTERVAL_MS);
     
-    document.getElementById('fetch-crossovers').addEventListener('click', async () => {
-        const symbol = document.getElementById('symbol-select').value; 
-        const timeframe = document.getElementById('timeframe-select').value;
-        const container = document.getElementById('crossover-results');
-        container.innerHTML = '<p>Loading crossover data...</p>';
-        const crossovers = await fetchHistoricalCrossovers(symbol, timeframe);
-        displayCrossovers(crossovers);
-    });
-
     document.querySelector('.tabs').addEventListener('click', (e) => {
         if (e.target.matches('.tab-link')) {
             const tabName = e.target.dataset.tab;

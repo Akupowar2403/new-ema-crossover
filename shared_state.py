@@ -9,3 +9,7 @@ websocket_command_queue = asyncio.Queue()
 # The key is a tuple: (symbol, timeframe)
 # The value is the CandleManager instance for that pair.
 candle_managers_state: Dict[Tuple[str, str], any] = {}
+
+# This file will hold instances that need to be shared across the application.
+
+alert_service = None

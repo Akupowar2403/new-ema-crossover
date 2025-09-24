@@ -273,3 +273,16 @@ table tbody tr:nth-child(even) {
     color: var(--text-primary);
     border-radius: 4px;
 }
+/* In style.css */
+
+.alerts-log li {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-color);
+    /* This makes the fade-out look smooth over half a second */
+    transition: opacity 0.5s ease-out;
+}
+
+/* We'll add this class with JavaScript to trigger the animation */
+.alerts-log li.fade-out {
+    opacity: 0;
+}

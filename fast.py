@@ -1,4 +1,3 @@
-
 import asyncio
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect,HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +11,8 @@ import websocket_manager
 from shared_state import candle_managers_state, websocket_command_queue
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from telegram_bot import TelegramBotApp
+import shared_state
 import os
 
 
@@ -34,13 +35,26 @@ semaphore = asyncio.Semaphore(API_CONCURRENCY_LIMIT)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Server startup: Starting WebSocket client...")
-    task = asyncio.create_task(websocket_manager.start_websocket_client(manager, semaphore))
+    print("Server startup: Initializing services...")
+    
+    # Initialize and run the Telegram Bot in the background
+    bot_app = TelegramBotApp()
+    if bot_app.app:
+        shared_state.alert_service = bot_app.alert_service
+        telegram_task = asyncio.create_task(bot_app.run_in_background())
+
+    # Start the existing WebSocket client
+    websocket_task = asyncio.create_task(websocket_manager.start_websocket_client(manager, semaphore))
+    
     yield
-    print("Server shutdown: Stopping WebSocket client...")
-    task.cancel()
+    
+    print("Server shutdown: Stopping background tasks...")
+    websocket_task.cancel()
+    if bot_app.app:
+        telegram_task.cancel()
 
 app = FastAPI(lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5500", "http://localhost:5500"], 
