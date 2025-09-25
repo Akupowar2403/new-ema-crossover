@@ -10,6 +10,7 @@
     --text-primary: #e0e0e0;
     --text-secondary: #aaa;
     --accent-color: #4CAF50;
+    /* These single colors are no longer used by the main table, but can be kept for other elements */
     --bullish-color: #2e7d32;
     --bearish-color: #c62828;
     --neutral-color: #424242;
@@ -37,44 +38,6 @@ header h1 {
     margin: 0 auto;
 }
 
-/* Controls styling */
-.controls {
-    margin: 20px 0;
-}
-.controls label {
-    margin-right: 8px;
-}
-.controls select {
-    margin-right: 20px;
-}
-/* Add this to your style.css file */
-
-/* This rule will apply to BOTH dropdowns in the controls section */
-.controls select {
-    background-color: var(--background-tertiary);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 1em;
-}
-
-/* This rule will style the button to match */
-.controls button {
-    background-color: var(--background-tertiary);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    padding: 8px 16px;
-    border-radius: 4px;
-    font-size: 1em;
-    cursor: pointer;
-    transition: background-color 0.2s; /* Adds a nice hover effect */
-}
-
-/* Optional: Add a hover effect for the button */
-.controls button:hover {
-    background-color: var(--border-color);
-}
 /* Tabs Styling */
 .tabs {
     overflow: hidden;
@@ -142,16 +105,16 @@ table tbody tr:nth-child(even) {
     font-weight: bold;
 }
 
-/* Signal Styling */
-.bullish {
-    background-color: var(--bullish-color);
-    color: white;
-}
+/* --- NEW Trend Strength Colors --- */
+.bullish-1 { background-color: #2e7d32; color: white; } /* 0-10 Bars (Darkest Green) */
+.bullish-2 { background-color: #43a047; color: white; } /* 11-40 Bars */
+.bullish-3 { background-color: #66bb6a; color: white; } /* 41-60 Bars */
+.bullish-4 { background-color: #a5d6a7; color: black; } /* > 60 Bars (Lightest Green) */
 
-.bearish {
-    background-color: var(--bearish-color);
-    color: white;
-}
+.bearish-1 { background-color: #c62828; color: white; } /* 0-10 Bars (Darkest Red) */
+.bearish-2 { background-color: #d32f2f; color: white; } /* 11-40 Bars */
+.bearish-3 { background-color: #ef5350; color: white; } /* 41-60 Bars */
+.bearish-4 { background-color: #ef9a9a; color: black; } /* > 60 Bars (Lightest Red) */
 
 .neutral, .error, .n-a {
     background-color: var(--neutral-color);
@@ -177,32 +140,12 @@ table tbody tr:nth-child(even) {
 .alerts-log li {
     padding: 8px;
     border-bottom: 1px solid var(--border-color);
+    transition: opacity 0.5s ease-out; /* For fade-out animation */
+}
+.alerts-log li.fade-out {
+    opacity: 0; /* For fade-out animation */
 }
 
-/* Historical crossover results table */
-.crossover-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 10px;
-}
-
-.crossover-table th,
-.crossover-table td {
-  border: 1px solid #444;
-  padding: 8px;
-  text-align: center;
-  background-color: #222;
-  color: var(--text-primary);
-}
-
-/* Styles that were previously inline in index.html */
-#crossover-results {
-    margin-top: 20px;
-}
-#search-input { /* Simplified selector */
-    margin-bottom: 10px;
-    width: 200px;
-}
 .error-container {
     color: var(--bearish-color);
 }
@@ -254,35 +197,4 @@ table tbody tr:nth-child(even) {
 
 .remove-symbol-btn:hover {
     opacity: 0.8;
-}
-
-#symbol-select {
-    background-color: var(--background-secondary);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    position: relative;
-    z-index: 10;
-}
-
-/* Add styling for the new search input in the controls section */
-#search-input-controls {
-    width: 200px;
-    padding: 6px;
-    background-color: var(--background-tertiary);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    border-radius: 4px;
-}
-/* In style.css */
-
-.alerts-log li {
-    padding: 8px;
-    border-bottom: 1px solid var(--border-color);
-    /* This makes the fade-out look smooth over half a second */
-    transition: opacity 0.5s ease-out;
-}
-
-/* We'll add this class with JavaScript to trigger the animation */
-.alerts-log li.fade-out {
-    opacity: 0;
 }

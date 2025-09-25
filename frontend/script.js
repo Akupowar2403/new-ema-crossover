@@ -20,6 +20,7 @@ function connectWebSocket() {
 ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     
+    // This block handles the 30-second pop-up alert when a crossover happens
     if (data.type === 'crossover_alert') {
         const alertList = document.getElementById('alerts-list');
         
@@ -34,20 +35,22 @@ ws.onmessage = (event) => {
         
         alertList.prepend(newAlert);
 
-        // --- THIS IS THE 30-SECOND POPUP LOGIC ---
-        const VISIBLE_DURATION_MS = 30000; // 30 seconds
-        const FADE_ANIMATION_MS = 500;     // 0.5 seconds (must match CSS transition)
+        const VISIBLE_DURATION_MS = 30000;
+        const FADE_ANIMATION_MS = 500;
 
-        // After 30 seconds, add the 'fade-out' class to start the animation
         setTimeout(() => {
             newAlert.classList.add('fade-out');
         }, VISIBLE_DURATION_MS);
 
-        // After the animation is finished, remove the element completely from the page
         setTimeout(() => {
             newAlert.remove();
         }, VISIBLE_DURATION_MS + FADE_ANIMATION_MS);
-        // --- END OF POPUP LOGIC ---
+
+    } 
+    // --- NEW LOGIC: This block handles the continuous bar count updates ---
+    else if (data.type === 'live_update') {
+        // This quietly updates the table cell with the latest "bars since" count
+        updateTableCell(data.symbol, data.timeframe, data.signal);
     }
 };
 
@@ -161,6 +164,8 @@ async function removeSymbolFromWatchlist(symbol) {
 
 // --- UI POPULATION & UPDATE FUNCTIONS ---
 
+// In script.js
+
 function updateTableCell(symbol, timeframe, signal) {
     const table = document.getElementById('crypto-table');
     const row = table.querySelector(`[data-symbol="${symbol}"]`)?.closest('tr');
@@ -172,10 +177,13 @@ function updateTableCell(symbol, timeframe, signal) {
     const cell = row.cells[timeframeIndex + 1];
     if (!cell) return;
     
-    const statusClass = signal.status.toLowerCase().replace(/\s+/g, '-');
+    // --- THIS IS THE CRUCIAL UPDATE ---
+    // Use the helper function to get the correct color class
+    const statusClass = getTrendStrengthClass(signal.status, signal.bars_since);
+    
     const barsText = signal.bars_since !== null ? `(${signal.bars_since} bars)` : '';
     const text = signal.status !== "Neutral" && signal.status !== "N/A"
-        ? `${signal.status.substring(0, 4).toUpperCase()} ${barsText}`
+        ? `${signal.status.substring(0, 4)} ${barsText}`
         : signal.status;
 
     cell.className = statusClass;
@@ -217,9 +225,9 @@ function populateTable(tableId, assetsData) {
     if (!table.querySelector('thead')) {
         const thead = table.createTHead();
         const headerRow = thead.insertRow();
-        ['Asset', ...TIME_FRAMES].forEach(text => {
+        ['Symbol', ...TIME_FRAMES].forEach(text => {
             const th = document.createElement('th');
-            th.textContent = text.toUpperCase();
+            th.textContent = text;
             headerRow.appendChild(th);
         });
     }
@@ -231,22 +239,23 @@ function populateTable(tableId, assetsData) {
         const tr = document.createElement('tr');
         tr.dataset.symbol = asset.name;
         
-        let rowContent = `<td class="asset-name clickable" title="Add ${asset.name} to Watchlist">${asset.name} ➕</td>`;
+        let rowContent = `<td class="asset-name clickable" title="Add ${asset.name} to Watchlist">${asset.name}</td>`;
         
         TIME_FRAMES.forEach(tf => {
             const signal = asset.timeframes?.[tf] || { status: 'N/A', bars_since: null };
-
             const status = signal.status || 'N/A'; 
             const bars_since = signal.bars_since;
-
-            const statusClass = status.toLowerCase().replace(/\s+/g, '-');
+            
+            // --- THIS IS THE UPDATED LINE ---
+            // It now calls your new helper function to get the correct color class
+            const statusClass = getTrendStrengthClass(status, bars_since);
+            
             const barsText = bars_since !== null ? `(${bars_since} bars)` : '';
             const text = status !== "Neutral" && status !== "N/A"
-                ? `${status.substring(0, 4).toUpperCase()} ${barsText}`
+                ? `${status.substring(0, 4)} ${barsText}`
                 : status;
-            
+
             rowContent += `<td class="${statusClass}">${text}</td>`;
-            
         });
         tr.innerHTML = rowContent;
         fragment.appendChild(tr);
@@ -255,22 +264,40 @@ function populateTable(tableId, assetsData) {
 }
 
 function populateSymbolDatalist(symbols) {
-    const selectElement = document.getElementById('symbol-select'); 
-    
-    if (selectElement) {
-        selectElement.innerHTML = ''; 
-        
-        symbols.forEach(symbol => {
-            const option = document.createElement('option');
-            option.value = symbol;
-            option.textContent = symbol; 
-            selectElement.appendChild(option);
-        });
-    } else {
-        console.error("Error: Could not find the dropdown with ID 'symbol-select'.");
+    // We target the new <datalist> element, not the old dropdown
+    const datalist = document.getElementById('symbol-suggestions');
+    if (!datalist) {
+        console.error("Error: Could not find the datalist with ID 'symbol-suggestions'.");
+        return;
     }
-}
 
+    // Clear any old options that might be there
+    datalist.innerHTML = '';
+
+    // Add each symbol from the master list as a new <option>
+    symbols.forEach(symbol => {
+        const option = document.createElement('option');
+        // For a datalist, the browser uses the 'value' for both matching and displaying
+        option.value = symbol;
+        datalist.appendChild(option);
+    });
+}
+// THIS FUNCTION IS CRUCIAL FOR THE COLOR SHADING
+function getTrendStrengthClass(status, bars) {
+    if (status === 'Bullish') {
+        if (bars >= 0 && bars <= 10) return 'bullish-1';
+        if (bars >= 11 && bars <= 40) return 'bullish-2';
+        if (bars >= 41 && bars <= 60) return 'bullish-3';
+        if (bars > 60) return 'bullish-4';
+    } 
+    else if (status === 'Bearish') {
+        if (bars >= 0 && bars <= 10) return 'bearish-1';
+        if (bars >= 11 && bars <= 40) return 'bearish-2';
+        if (bars >= 41 && bars <= 60) return 'bearish-3';
+        if (bars > 60) return 'bearish-4';
+    }
+    return 'neutral'; // Default class for "N/A"
+}
 
 function displayCrossovers(crossovers) {
     const container = document.getElementById('crossover-results');
@@ -350,7 +377,6 @@ function addSearchFilter(inputId, tableId) {
         });
     }));
 }
-
 // --- INITIALIZATION ---
 
 async function runDataRefreshCycle() {
@@ -363,18 +389,39 @@ async function runDataRefreshCycle() {
     const screenerData = await fetchScreenerData(watchlist);
     if (screenerData) {
         populateAllTables(screenerData);
-        document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
     }
 }
 
+function startLiveClock() {
+    const timestampElement = document.getElementById('last-updated');
+    if (!timestampElement) return;
+
+    timestampElement.textContent = new Date().toLocaleTimeString();
+
+    setInterval(() => {
+        timestampElement.textContent = new Date().toLocaleTimeString();
+    }, 1000);
+}
+
+// At the end of script.js
+
 document.addEventListener('DOMContentLoaded', async () => {
     connectWebSocket();
+    startLiveClock(); 
     
+    // This part is crucial:
+    // 1. Fetch the master list of all symbols
     await fetchAllSymbols(); 
-    await runDataRefreshCycle(); 
+    // 2. Immediately use that list to create the suggestions
+    populateSymbolDatalist(masterSymbolList); // This line is likely missing
 
+    // Fetches initial data for the screener table
+    await runDataRefreshCycle();
+
+    // Sets up the automatic refresh every 15 minutes
     setInterval(runDataRefreshCycle, REFRESH_INTERVAL_MS);
     
+    // --- The rest of your event listeners ---
     document.querySelector('.tabs').addEventListener('click', (e) => {
         if (e.target.matches('.tab-link')) {
             const tabName = e.target.dataset.tab;
@@ -392,7 +439,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const updatedWatchlist = await addSymbolToWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);
-                updateSymbolDropdown(updatedWatchlist);
                 input.value = '';
                 await runDataRefreshCycle();
             }
@@ -401,11 +447,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('watchlist-list').addEventListener('click', async (e) => {
         if (e.target.matches('.remove-symbol-btn')) {
-            const symbol = e.target.dataset.symbol; 
+            const symbol = e.target.dataset.symbol;
             const updatedWatchlist = await removeSymbolFromWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);
-                updateSymbolDropdown(updatedWatchlist);
                 await runDataRefreshCycle();
             }
         }

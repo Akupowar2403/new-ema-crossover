@@ -56,6 +56,8 @@ class CandleManager:
 
 # In websocket_manager.py, inside the CandleManager class
 
+# In websocket_manager.py, inside the CandleManager class
+
     async def process_live_candle(self, msg: dict):
         ts_sec = msg.get('candle_start_time') // 1_000_000
         candle_timestamp = pd.to_datetime(ts_sec, unit='s').tz_localize('UTC')
@@ -70,27 +72,24 @@ class CandleManager:
         old_status = self.last_signal_state.get('status', 'N/A')
         new_status = new_signal_state.get('status', 'N/A')
 
+        # This block now ONLY handles the one-time crossover alerts
         if new_status != old_status and new_status != 'N/A':
             helpers.logger.info(f"ALERT: New confirmed crossover for {self.symbol}-{self.timeframe}: {new_status}")
             
-            # This part calculates the timestamp
             crossover_timestamp = None
             if new_signal_state.get("bars_since") == 0:
                 if len(self.candles_df.index) >= 2:
                     crossover_time = self.candles_df.index[-2]
                     crossover_timestamp = int(crossover_time.timestamp())
 
-            # --- THIS IS THE UPDATED TELEGRAM LOGIC ---
             if shared_state.alert_service:
                 crossover_time_str = "N/A"
                 if crossover_timestamp:
-                    # Convert Unix timestamp to a readable IST string
                     ist_tz = pytz.timezone('Asia/Kolkata')
                     utc_time = datetime.fromtimestamp(crossover_timestamp, tz=pytz.utc)
                     ist_time = utc_time.astimezone(ist_tz)
                     crossover_time_str = ist_time.strftime('%b %d, %Y %I:%M %p %Z')
 
-                # Add the crossover time to the message
                 telegram_message = (
                     f"📈 *New Crossover Alert* 📈\n\n"
                     f"*Symbol:* `{self.symbol}`\n"
@@ -103,14 +102,23 @@ class CandleManager:
                     telegram_message
                 )
             
-            # This part sends the alert to the frontend (unchanged)
             alert_payload = {
                 "type": "crossover_alert", "symbol": self.symbol, "timeframe": self.timeframe,
                 "status": new_status, "crossover_timestamp": crossover_timestamp
             }
             await self.manager.broadcast(json.dumps(alert_payload))
-            
-            helpers.save_state_to_redis(self.symbol, self.timeframe, self.candles_df, new_signal_state)
+        
+        # --- NEW LOGIC: Always send a live update for every candle ---
+        live_update_payload = {
+            "type": "live_update",
+            "symbol": self.symbol,
+            "timeframe": self.timeframe,
+            "signal": new_signal_state
+        }
+        await self.manager.broadcast(json.dumps(live_update_payload))
+
+        # Always save the latest state to Redis
+        helpers.save_state_to_redis(self.symbol, self.timeframe, self.candles_df, new_signal_state)
         
         self.last_signal_state = new_signal_state
 

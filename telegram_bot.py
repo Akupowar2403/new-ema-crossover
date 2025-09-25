@@ -202,7 +202,3 @@ class TelegramBotApp:
             async with self.app:
                 await self.app.start()
                 await self.app.updater.start_polling()
-
-# --- REMOVED: Standalone execution block ---
-# The 'if __name__ == "__main__":' block has been removed because
-# this script is now run by fast.py, not directly.

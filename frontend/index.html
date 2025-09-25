@@ -13,7 +13,7 @@
 
     <header>
         <h1>📈 9 & 20 EMA Crossover Screener </h1>
-        <p>Last Updated: <span id="last-updated">Never</span></p>
+        <p>User Connected : <span id="last-updated">Never</span></p>
     </header>
 
     <main class="container">
@@ -31,7 +31,10 @@
         <section id="Watchlist" class="tab-content">
             <h2>Watchlist Management</h2>
             <div class="watchlist-form">
-                <input id="add-symbol-input" type="text" placeholder="Enter symbol to add (e.g., BTCUSD)">
+                <input id="add-symbol-input" list="symbol-suggestions" type="text" placeholder="Enter symbol to add (e.g., BTCUSD)">
+                
+                <datalist id="symbol-suggestions"></datalist>
+
                 <button id="add-symbol-button">Add to Watchlist</button>
             </div>
             <ul id="watchlist-list">

@@ -36,21 +36,19 @@ semaphore = asyncio.Semaphore(API_CONCURRENCY_LIMIT)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Server startup: Initializing services...")
-    
-    # Initialize and run the Telegram Bot in the background
+
     bot_app = TelegramBotApp()
     if bot_app.app:
         shared_state.alert_service = bot_app.alert_service
         telegram_task = asyncio.create_task(bot_app.run_in_background())
 
-    # Start the existing WebSocket client
     websocket_task = asyncio.create_task(websocket_manager.start_websocket_client(manager, semaphore))
     
     yield
     
     print("Server shutdown: Stopping background tasks...")
     websocket_task.cancel()
-    if bot_app.app:
+    if bot_app.app and 'telegram_task' in locals():
         telegram_task.cancel()
 
 app = FastAPI(lifespan=lifespan)
