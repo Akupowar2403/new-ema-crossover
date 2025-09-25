@@ -1,4 +1,3 @@
-
 import pandas as pd
 import helpers 
 import asyncio
@@ -7,7 +6,6 @@ import hmac
 import hashlib
 import time
 import json
-import asyncio
 import shared_state
 import pytz
 from typing import Dict, Tuple
@@ -26,37 +24,25 @@ class CandleManager:
         self.last_signal_state = {}
 
     async def initialize_history(self, semaphore: asyncio.Semaphore):
-        
         cached_df, cached_state = helpers.load_state_from_redis(self.symbol, self.timeframe)
-        
         now = int(time.time())
         start_time = 1
-        
         if cached_df is not None and not cached_df.empty:
             self.candles_df = cached_df
             self.last_signal_state = cached_state or {}
             last_timestamp = int(self.candles_df.index[-1].timestamp())
             start_time = last_timestamp + 1
             helpers.logger.info(f"[{self.symbol}-{self.timeframe}] Loaded from cache. Fetching delta.")
-
         if start_time < now:
             new_candles_df = await helpers.fetch_historical_candles(self.symbol, self.timeframe, start_time, now, semaphore)
             if not new_candles_df.empty:
                 self.candles_df = pd.concat([self.candles_df, new_candles_df])
                 self.candles_df = self.candles_df[~self.candles_df.index.duplicated(keep='last')]
                 self.candles_df.sort_index(inplace=True)
-
         if not self.candles_df.empty:
             self.last_signal_state = helpers.analyze_ema_state(self.candles_df)
             helpers.save_state_to_redis(self.symbol, self.timeframe, self.candles_df, self.last_signal_state)
-
         helpers.logger.info(f"[{self.symbol}-{self.timeframe}] Initialized with status: {self.last_signal_state.get('status')}")
-
-# In websocket_manager.py, inside the CandleManager class
-
-# In websocket_manager.py, inside the CandleManager class
-
-# In websocket_manager.py, inside the CandleManager class
 
     async def process_live_candle(self, msg: dict):
         ts_sec = msg.get('candle_start_time') // 1_000_000
@@ -72,7 +58,6 @@ class CandleManager:
         old_status = self.last_signal_state.get('status', 'N/A')
         new_status = new_signal_state.get('status', 'N/A')
 
-        # This block now ONLY handles the one-time crossover alerts
         if new_status != old_status and new_status != 'N/A':
             helpers.logger.info(f"ALERT: New confirmed crossover for {self.symbol}-{self.timeframe}: {new_status}")
             
@@ -89,7 +74,6 @@ class CandleManager:
                     utc_time = datetime.fromtimestamp(crossover_timestamp, tz=pytz.utc)
                     ist_time = utc_time.astimezone(ist_tz)
                     crossover_time_str = ist_time.strftime('%b %d, %Y %I:%M %p %Z')
-
                 telegram_message = (
                     f"📈 *New Crossover Alert* 📈\n\n"
                     f"*Symbol:* `{self.symbol}`\n"
@@ -108,7 +92,6 @@ class CandleManager:
             }
             await self.manager.broadcast(json.dumps(alert_payload))
         
-        # --- NEW LOGIC: Always send a live update for every candle ---
         live_update_payload = {
             "type": "live_update",
             "symbol": self.symbol,
@@ -117,11 +100,9 @@ class CandleManager:
         }
         await self.manager.broadcast(json.dumps(live_update_payload))
 
-        # Always save the latest state to Redis
         helpers.save_state_to_redis(self.symbol, self.timeframe, self.candles_df, new_signal_state)
         
         self.last_signal_state = new_signal_state
-
 
 def generate_signature(secret, message):
     return hmac.new(bytes(secret, 'utf-8'), bytes(message, 'utf-8'), hashlib.sha256).hexdigest()

@@ -1,6 +1,5 @@
 /*
  * :root is where we define our CSS variables (our "master color palette").
- * To change a color across the entire site, you only need to change it here.
  */
 :root {
     --background-primary: #121212;
@@ -10,7 +9,6 @@
     --text-primary: #e0e0e0;
     --text-secondary: #aaa;
     --accent-color: #4CAF50;
-    /* These single colors are no longer used by the main table, but can be kept for other elements */
     --bullish-color: #2e7d32;
     --bearish-color: #c62828;
     --neutral-color: #424242;
@@ -34,7 +32,7 @@ header h1 {
 }
 
 .container {
-    max-width: 1400px;
+    max-width: 1600px;
     margin: 0 auto;
 }
 
@@ -103,18 +101,19 @@ table tbody tr:nth-child(even) {
 .asset-name {
     text-align: left;
     font-weight: bold;
+    cursor: pointer;
 }
 
-/* --- NEW Trend Strength Colors --- */
-.bullish-1 { background-color: #2e7d32; color: white; } /* 0-10 Bars (Darkest Green) */
-.bullish-2 { background-color: #43a047; color: white; } /* 11-40 Bars */
-.bullish-3 { background-color: #66bb6a; color: white; } /* 41-60 Bars */
-.bullish-4 { background-color: #a5d6a7; color: black; } /* > 60 Bars (Lightest Green) */
+/* --- Trend Strength Colors --- */
+.bullish-1 { background-color: #2e7d32; color: white; }
+.bullish-2 { background-color: #43a047; color: white; }
+.bullish-3 { background-color: #66bb6a; color: white; }
+.bullish-4 { background-color: #a5d6a7; color: black; }
 
-.bearish-1 { background-color: #c62828; color: white; } /* 0-10 Bars (Darkest Red) */
-.bearish-2 { background-color: #d32f2f; color: white; } /* 11-40 Bars */
-.bearish-3 { background-color: #ef5350; color: white; } /* 41-60 Bars */
-.bearish-4 { background-color: #ef9a9a; color: black; } /* > 60 Bars (Lightest Red) */
+.bearish-1 { background-color: #c62828; color: white; }
+.bearish-2 { background-color: #d32f2f; color: white; }
+.bearish-3 { background-color: #ef5350; color: white; }
+.bearish-4 { background-color: #ef9a9a; color: black; }
 
 .neutral, .error, .n-a {
     background-color: var(--neutral-color);
@@ -140,17 +139,17 @@ table tbody tr:nth-child(even) {
 .alerts-log li {
     padding: 8px;
     border-bottom: 1px solid var(--border-color);
-    transition: opacity 0.5s ease-out; /* For fade-out animation */
+    transition: opacity 0.5s ease-out;
 }
 .alerts-log li.fade-out {
-    opacity: 0; /* For fade-out animation */
+    opacity: 0;
 }
 
 .error-container {
     color: var(--bearish-color);
 }
 .spinner-container {
-    display: none; /* Controlled by JS */
+    display: none;
 }
 
 /* Watchlist Section Styling */
@@ -197,4 +196,71 @@ table tbody tr:nth-child(even) {
 
 .remove-symbol-btn:hover {
     opacity: 0.8;
+}
+
+/* Position "Source" text above the 1d column */
+#crypto-table thead th:last-child {
+    position: relative;
+}
+
+#crypto-table thead th:last-child::after {
+    content: 'Source - Delta Exchange';
+    position: absolute;
+    top: -18px;
+    right: 0;
+    font-size: 0.9em;
+    font-weight: normal;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* --- Professional Footer Styling --- */
+/* In your style.css, update the footer section */
+
+/* Keep existing footer styles */
+footer {
+    text-align: center;
+    margin-top: 50px;
+    padding: 25px 20px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--background-secondary);
+}
+
+.footer-content {
+    max-width: 400px;
+    margin: 0 auto;
+    color: var(--text-secondary);
+}
+
+.footer-logo {
+    display: block;
+    font-size: 2em;
+    margin-bottom: 10px;
+    opacity: 0.8;
+}
+
+/* New specific styles for the footer paragraphs */
+.footer-content p { /* This targets all P tags in footer-content */
+    margin: 8px 0; /* Adjust vertical spacing between all footer text lines */
+    font-size: 0.85em; /* Slightly larger than before for main info */
+}
+
+.footer-content .designed-by a,
+.footer-content .copyright a { /* Ensure links within these are styled */
+    color: var(--accent-color);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.footer-content .designed-by a:hover,
+.footer-content .copyright a:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+}
+
+.footer-content .disclaimer {
+    font-size: 0.5em; /* Keep disclaimer smaller */
+    font-style: italic;
+    opacity: 0.5;
+    margin-top: 20px; /* More space above disclaimer */
 }
