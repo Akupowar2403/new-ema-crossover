@@ -10,8 +10,18 @@ import shared_state
 import pytz
 from typing import Dict, Tuple
 from datetime import datetime
-import config
 from shared_state import websocket_command_queue, candle_managers_state
+
+# --- .env Configuration Loading ---
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+API_KEY = os.getenv('API_KEY')
+API_SECRET = os.getenv('API_SECRET')
+TIMEFRAMES_STR = os.getenv('TIMEFRAMES', '1m,15m,1h,4h,1d')
+TIMEFRAMES = [tf.strip() for tf in TIMEFRAMES_STR.split(',')]
+# ----------------------------------
 
 WEBSOCKET_URL = "wss://socket.india.delta.exchange"
 
@@ -111,11 +121,11 @@ async def handle_commands(ws, manager, semaphore: asyncio.Semaphore):
     while True:
         command, symbol = await websocket_command_queue.get()
         helpers.logger.info(f"Received command from API: {command} {symbol}")
-        channels = [{"name": f"candlestick_{tf}", "symbols": [symbol]} for tf in config.TIMEFRAMES]
+        channels = [{"name": f"candlestick_{tf}", "symbols": [symbol]} for tf in TIMEFRAMES]
         
         if command == 'subscribe':
             await ws.send(json.dumps({"type": "subscribe", "payload": {"channels": channels}}))
-            for tf in config.TIMEFRAMES:
+            for tf in TIMEFRAMES:
                 key = (symbol, tf)
                 if key not in candle_managers_state:
                     manager_instance = CandleManager(symbol, tf, manager)
@@ -124,7 +134,7 @@ async def handle_commands(ws, manager, semaphore: asyncio.Semaphore):
         
         elif command == 'unsubscribe':
             await ws.send(json.dumps({"type": "unsubscribe", "payload": {"channels": channels}}))
-            for tf in config.TIMEFRAMES:
+            for tf in TIMEFRAMES:
                 if (key := (symbol, tf)) in candle_managers_state:
                     del candle_managers_state[key]
         
@@ -137,10 +147,10 @@ async def start_websocket_client(manager, semaphore: asyncio.Semaphore):
             async with websockets.connect(uri) as ws:
                 helpers.logger.info("WebSocket connected. Authenticating...")
                 timestamp = str(int(time.time()))
-                signature = generate_signature(config.API_SECRET, 'GET' + timestamp + '/live')
+                signature = generate_signature(API_SECRET, 'GET' + timestamp + '/live')
                 await ws.send(json.dumps({
                     "type": "auth",
-                    "payload": {"api-key": config.API_KEY, "signature": signature, "timestamp": timestamp}
+                    "payload": {"api-key": API_KEY, "signature": signature, "timestamp": timestamp}
                 }))
                 auth_resp = await ws.recv()
                 helpers.logger.info(f"Authentication response: {auth_resp}")
@@ -152,7 +162,7 @@ async def start_websocket_client(manager, semaphore: asyncio.Semaphore):
                 if watchlist:
                     init_tasks = []
                     for symbol in watchlist:
-                        for tf in config.TIMEFRAMES:
+                        for tf in TIMEFRAMES:
                             manager_instance = CandleManager(symbol, tf, manager)
                             candle_managers_state[(symbol, tf)] = manager_instance
                             init_tasks.append(manager_instance.initialize_history(semaphore))
@@ -160,7 +170,7 @@ async def start_websocket_client(manager, semaphore: asyncio.Semaphore):
                     await asyncio.gather(*init_tasks)
                     helpers.logger.info("All historical data has been warmed up.")
                     
-                    channels = [{"name": f"candlestick_{tf}", "symbols": watchlist} for tf in config.TIMEFRAMES]
+                    channels = [{"name": f"candlestick_{tf}", "symbols": watchlist} for tf in TIMEFRAMES]
                     await ws.send(json.dumps({"type": "subscribe", "payload": {"channels": channels}}))
                     helpers.logger.info("Subscribed to initial watchlist channels.")
 

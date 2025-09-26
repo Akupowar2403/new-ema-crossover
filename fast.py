@@ -6,7 +6,6 @@ from typing import List, Optional
 from contextlib import asynccontextmanager
 import time
 import helpers
-import config
 import websocket_manager
 from shared_state import candle_managers_state, websocket_command_queue
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +14,13 @@ from telegram_bot import TelegramBotApp
 import shared_state
 import os
 
+# --- .env Configuration Loading ---
+from dotenv import load_dotenv
+load_dotenv()
+
+TIMEFRAMES_STR = os.getenv('TIMEFRAMES', '1m,15m,1h,4h,1d')
+TIMEFRAMES = [tf.strip() for tf in TIMEFRAMES_STR.split(',')]
+# ----------------------------------
 
 class ConnectionManager:
     def __init__(self):
@@ -91,7 +97,7 @@ async def screener_data(request: ScreenerRequest):
     response_data = []
     for symbol in symbols_to_scan:
         timeframe_signals = {}
-        for tf in config.TIMEFRAMES:
+        for tf in TIMEFRAMES:
             manager_instance = candle_managers_state.get((symbol, tf))
             
             if manager_instance and manager_instance.last_signal_state:
@@ -102,7 +108,7 @@ async def screener_data(request: ScreenerRequest):
                     "live_status": "N/A", "live_crossover_detected": None
                 }
         response_data.append({"name": symbol, "timeframes": timeframe_signals})
-    print("--- DATA BEING SENT TO FRONTEND ---", response_data)    
+    print("--- DATA BEING SENT TO FRONTEND ---", response_data)     
     return {"crypto": response_data}
 
 @app.get("/all-symbols")

@@ -14,16 +14,21 @@ from telegram.ext import (
     filters,
 )
 
-# --- CORRECTED IMPORT ---
-# We import the entire config module to access all settings
-import config
+# --- .env Configuration Loading ---
+from dotenv import load_dotenv
+load_dotenv()
+
+TELEGRAM_ALERTS_ENABLED_STR = os.getenv('TELEGRAM_ALERTS_ENABLED', 'True')
+TELEGRAM_ALERTS_ENABLED = TELEGRAM_ALERTS_ENABLED_STR.lower() in ('true', '1', 't')
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+TELEGRAM_BOT_PIN = os.getenv('TELEGRAM_BOT_PIN')
+# ----------------------------------
 
 # Define the IST timezone
 IST = pytz.timezone('Asia/Kolkata')
 
 
 # ==================== User Store ====================
-# This class is unchanged
 class UserStore:
     def __init__(self, filepath="users.json"):
         self.filepath = filepath
@@ -55,7 +60,6 @@ class UserStore:
 
 
 # ==================== Logger ====================
-# This class is unchanged
 class BotLogger:
     def __init__(self):
         self.logger = self.setup_logger()
@@ -87,7 +91,6 @@ class BotLogger:
 
 
 # ==================== Response Handler ====================
-# This class is unchanged
 class ResponseHandler:
     def handle(self, text: str) -> str:
         processed = text.lower()
@@ -100,9 +103,8 @@ class ResponseHandler:
 # ==================== Alert Manager ====================
 class AlertService:
     def __init__(self):
-        # --- UPDATED: Reads from config.py module ---
-        self.alerts_enabled = getattr(config, 'TELEGRAM_ALERTS_ENABLED', True)
-        self.TOKEN = config.TELEGRAM_BOT_TOKEN
+        self.alerts_enabled = TELEGRAM_ALERTS_ENABLED
+        self.TOKEN = TELEGRAM_BOT_TOKEN
         self.BASE_URL = f"https://api.telegram.org/bot{self.TOKEN}/sendMessage"
         self.user_store = UserStore()
 
@@ -127,7 +129,6 @@ class AlertService:
 
 
 # ==================== Bot Handlers ====================
-# This class is unchanged
 class BotHandlers:
     BOT_USERNAME = "@SWTSdeltaexchange_bot"
     def __init__(self, user_store, response_handler, pin):
@@ -174,13 +175,12 @@ class BotHandlers:
 # ==================== Telegram Bot App ====================
 class TelegramBotApp:
     def __init__(self):
-        # --- UPDATED: Reads from config.py module ---
-        self.alerts_enabled = getattr(config, 'TELEGRAM_ALERTS_ENABLED', True)
+        self.alerts_enabled = TELEGRAM_ALERTS_ENABLED
         self.app = None
         if self.alerts_enabled:
             print("[Telegram Bot] Initializing Telegram integration.")
-            token = config.TELEGRAM_BOT_TOKEN
-            pin = config.TELEGRAM_BOT_PIN
+            token = TELEGRAM_BOT_TOKEN
+            pin = TELEGRAM_BOT_PIN
             self.user_store = UserStore()
             self.response_handler = ResponseHandler()
             self.alert_service = AlertService()

@@ -1,21 +1,31 @@
 /*
  * :root is where we define our CSS variables (our "master color palette").
  */
+/* Replace the :root variables in your style.css with this */
+/* Replace the :root variables in your style.css with this */
+/* Replace the :root variables in your style.css with this */
+/* Replace the :root variables in your style.css with this */
+/* Alternative "High-Contrast" :root for better readability if needed */
 :root {
-    --background-primary: #121212;
-    --background-secondary: #1e1e1e;
-    --background-tertiary: #2c2c2c;
-    --border-color: #333;
-    --text-primary: #e0e0e0;
-    --text-secondary: #aaa;
-    --accent-color: #4CAF50;
-    --bullish-color: #2e7d32;
-    --bearish-color: #c62828;
-    --neutral-color: #424242;
+    /* Backgrounds: A very light, cyan-tinted base for a clean, airy feel */
+    --background-primary: #f1fafb;
+    --background-secondary: #FFFFFF; /* Pure white for tables to make them pop */
+    --background-tertiary: #f1fafb;
+
+    /* Borders & Text: Deep royal blue provides strong, readable contrast */
+    --border-color: #a0e4f1;
+    --text-primary: #161c91;
+    --text-secondary: #7ea6f4;    /* Softer blue for secondary details */
+
+    /* Accent & Financial Indicators */
+    --accent-color: #14176d;       /* Bright, energetic blue for highlights */
+    --bullish-color: #2E7D32;      /* A standard, professional green */
+    --bearish-color: #C62828;      /* A standard, professional red */
+    --neutral-color: #a0e4f1;      /* Light sky blue for neutral cells */
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--background-primary);
     color: var(--text-primary);
     margin: 0;
@@ -104,7 +114,7 @@ table tbody tr:nth-child(even) {
     cursor: pointer;
 }
 
-/* --- Trend Strength Colors --- */
+/* This creates the gradient effect for your signals */
 .bullish-1 { background-color: #2e7d32; color: white; }
 .bullish-2 { background-color: #43a047; color: white; }
 .bullish-3 { background-color: #66bb6a; color: white; }
@@ -117,7 +127,8 @@ table tbody tr:nth-child(even) {
 
 .neutral, .error, .n-a {
     background-color: var(--neutral-color);
-    color: var(--text-secondary);
+    color: var(--text-primary);
+    opacity: 0.8;
 }
 
 /* Alerts Log */
@@ -185,8 +196,8 @@ table tbody tr:nth-child(even) {
 }
 
 .remove-symbol-btn {
-    background-color: var(--bearish-color);
-    color: white;
+    background-color: var(--accent-color); /* Changed to use the accent blue */
+    color: white; /* Keep text white for contrast */
     border: none;
     padding: 5px 10px;
     border-radius: 4px;
@@ -195,7 +206,9 @@ table tbody tr:nth-child(even) {
 }
 
 .remove-symbol-btn:hover {
-    opacity: 0.8;
+    /* You might want a slightly darker blue on hover for interaction feedback */
+    background-color: #3b3cbf; /* A slightly darker shade of your accent blue */
+    opacity: 1; /* Ensure opacity is not reduced by a previous rule */
 }
 
 /* Position "Source" text above the 1d column */

@@ -5,9 +5,17 @@ import logging
 from datetime import datetime
 import redis
 import json
-import config
 from pathlib import Path
 import asyncio
+
+# --- .env Configuration Loading ---
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+SHORT_EMA_PERIOD = int(os.getenv('SHORT_EMA_PERIOD', '9'))
+LONG_EMA_PERIOD = int(os.getenv('LONG_EMA_PERIOD', '20'))
+# ----------------------------------
 
 WATCHLIST_FILE = Path("watchlist.json")
 logger = logging.getLogger(__name__)
@@ -63,12 +71,12 @@ def analyze_ema_state(df: pd.DataFrame) -> dict:
         "live_crossover_detected": None
     }
 
-    if len(df) < config.LONG_EMA_PERIOD + 2:
+    if len(df) < LONG_EMA_PERIOD + 2:
         return analysis
 
     df = df.copy()
-    df['ema_short'] = df['close'].ewm(span=config.SHORT_EMA_PERIOD, adjust=False).mean()
-    df['ema_long'] = df['close'].ewm(span=config.LONG_EMA_PERIOD, adjust=False).mean()
+    df['ema_short'] = df['close'].ewm(span=SHORT_EMA_PERIOD, adjust=False).mean()
+    df['ema_long'] = df['close'].ewm(span=LONG_EMA_PERIOD, adjust=False).mean()
 
     confirmed_crossover_index = None
     for i in range(len(df) - 2, 0, -1):
