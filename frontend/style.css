@@ -1,10 +1,4 @@
-/*
- * :root is where we define our CSS variables (our "master color palette").
- */
-/* Replace the :root variables in your style.css with this */
-/* Replace the :root variables in your style.css with this */
-/* Replace the :root variables in your style.css with this */
-/* Replace the :root variables in your style.css with this */
+
 /* Alternative "High-Contrast" :root for better readability if needed */
 :root {
     /* Backgrounds: A very light, cyan-tinted base for a clean, airy feel */
@@ -52,6 +46,10 @@ header h1 {
     background-color: var(--background-secondary);
     border-radius: 8px;
     margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-right: 15px; /* Add some space on the right edge */
 }
 
 .tab-link {
@@ -64,6 +62,7 @@ header h1 {
     transition: background-color 0.3s;
     color: var(--text-primary);
     font-size: 16px;
+    float: none; /* This replaces 'float: left' if it exists */
 }
 
 .tab-link:hover {
@@ -97,6 +96,8 @@ table th, table td {
     border: 1px solid var(--border-color);
     padding: 10px;
     text-align: center;
+    /* Added transition for smooth color changes from WebSocket updates */
+    transition: background-color 0.4s ease, color 0.4s ease;
 }
 
 table thead th {
@@ -114,22 +115,10 @@ table tbody tr:nth-child(even) {
     cursor: pointer;
 }
 
-/* This creates the gradient effect for your signals */
-.bullish-1 { background-color: #2e7d32; color: white; }
-.bullish-2 { background-color: #43a047; color: white; }
-.bullish-3 { background-color: #66bb6a; color: white; }
-.bullish-4 { background-color: #a5d6a7; color: black; }
-
-.bearish-1 { background-color: #c62828; color: white; }
-.bearish-2 { background-color: #d32f2f; color: white; }
-.bearish-3 { background-color: #ef5350; color: white; }
-.bearish-4 { background-color: #ef9a9a; color: black; }
-
-.neutral, .error, .n-a {
-    background-color: var(--neutral-color);
-    color: var(--text-primary);
-    opacity: 0.8;
-}
+/*
+  REMOVED: The old class-based styles (.bullish-1, .bearish-2, etc.) are
+  no longer needed as JavaScript now applies colors directly.
+*/
 
 /* Alerts Log */
 .alerts-log {
@@ -179,20 +168,43 @@ table tbody tr:nth-child(even) {
     border-radius: 4px;
 }
 
-#watchlist-list {
-    list-style-type: none;
-    padding: 0;
-}
+/* In style.css */
 
+/* Update the list item to use flexbox for alignment */
 #watchlist-list li {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px;
+    align-items: center; /* Vertically centers the button and text */
+    gap: 15px; /* Creates space between the button and the symbol name */
+    padding: 12px 10px;
     background-color: var(--background-tertiary);
     border-bottom: 1px solid var(--border-color);
     border-radius: 4px;
     margin-bottom: 5px;
+    font-weight: 500;
+}
+
+/* Completely new style for the circular remove button */
+.remove-symbol-btn {
+    background-color: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef9a9a;
+    border-radius: 50%; /* This makes it a circle */
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.remove-symbol-btn:hover {
+    background-color: #c62828;
+    color: white;
+    transform: scale(1.1);
 }
 
 .remove-symbol-btn {
@@ -228,9 +240,6 @@ table tbody tr:nth-child(even) {
 }
 
 /* --- Professional Footer Styling --- */
-/* In your style.css, update the footer section */
-
-/* Keep existing footer styles */
 footer {
     text-align: center;
     margin-top: 50px;
@@ -252,14 +261,13 @@ footer {
     opacity: 0.8;
 }
 
-/* New specific styles for the footer paragraphs */
-.footer-content p { /* This targets all P tags in footer-content */
-    margin: 8px 0; /* Adjust vertical spacing between all footer text lines */
-    font-size: 0.85em; /* Slightly larger than before for main info */
+.footer-content p {
+    margin: 8px 0;
+    font-size: 0.85em;
 }
 
 .footer-content .designed-by a,
-.footer-content .copyright a { /* Ensure links within these are styled */
+.footer-content .copyright a {
     color: var(--accent-color);
     text-decoration: none;
     transition: color 0.2s;
@@ -272,8 +280,23 @@ footer {
 }
 
 .footer-content .disclaimer {
-    font-size: 0.5em; /* Keep disclaimer smaller */
+    font-size: 0.5em;
     font-style: italic;
     opacity: 0.5;
-    margin-top: 20px; /* More space above disclaimer */
+    margin-top: 20px;
+}
+/* In style.css */
+
+.telegram-nav-link {
+    color: var(--accent-color);
+    text-decoration: none; /* <-- This line removes the underline */
+    font-weight: bold;
+    font-size: 0.9em;
+    padding: 8px 0;
+    transition: color 0.2s ease;
+}
+
+.telegram-nav-link:hover {
+    color: var(--text-primary);
+    text-decoration: underline; /* This adds the line back ONLY on hover */
 }

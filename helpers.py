@@ -7,6 +7,7 @@ import redis
 import json
 from pathlib import Path
 import asyncio
+from io import StringIO
 
 # --- .env Configuration Loading ---
 import os
@@ -169,7 +170,7 @@ def load_state_from_redis(symbol: str, timeframe: str) -> tuple[pd.DataFrame | N
     saved_data = redis_client.hgetall(redis_key)
     if not saved_data: return None, None
     try:
-        df = pd.read_json(saved_data['df_json'], orient='split')
+        df = pd.read_json(StringIO(saved_data['df_json']), orient='split')
         df.index = df.index.tz_localize('UTC')
         last_signal_state = json.loads(saved_data['last_signal_state'])
         return df, last_signal_state

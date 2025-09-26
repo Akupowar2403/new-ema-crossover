@@ -123,21 +123,31 @@ async def handle_commands(ws, manager, semaphore: asyncio.Semaphore):
         helpers.logger.info(f"Received command from API: {command} {symbol}")
         channels = [{"name": f"candlestick_{tf}", "symbols": [symbol]} for tf in TIMEFRAMES]
         
-        if command == 'subscribe':
-            await ws.send(json.dumps({"type": "subscribe", "payload": {"channels": channels}}))
-            for tf in TIMEFRAMES:
-                key = (symbol, tf)
-                if key not in candle_managers_state:
-                    manager_instance = CandleManager(symbol, tf, manager)
-                    candle_managers_state[key] = manager_instance
-                    asyncio.create_task(manager_instance.initialize_history(semaphore))
-        
-        elif command == 'unsubscribe':
-            await ws.send(json.dumps({"type": "unsubscribe", "payload": {"channels": channels}}))
-            for tf in TIMEFRAMES:
-                if (key := (symbol, tf)) in candle_managers_state:
-                    del candle_managers_state[key]
-        
+        try: # <--- ADDED: Start of the error handling block
+            if command == 'subscribe':
+                await ws.send(json.dumps({"type": "subscribe", "payload": {"channels": channels}}))
+                for tf in TIMEFRAMES:
+                    key = (symbol, tf)
+                    if key not in candle_managers_state:
+                        manager_instance = CandleManager(symbol, tf, manager)
+                        candle_managers_state[key] = manager_instance
+                        asyncio.create_task(manager_instance.initialize_history(semaphore))
+            
+            elif command == 'unsubscribe':
+                await ws.send(json.dumps({"type": "unsubscribe", "payload": {"channels": channels}}))
+                for tf in TIMEFRAMES:
+                    if (key := (symbol, tf)) in candle_managers_state:
+                        del candle_managers_state[key]
+
+        except websockets.exceptions.ConnectionClosedOK: # <--- ADDED: Catch the specific error
+            helpers.logger.warning(f"Could not send '{command}' command; WebSocket connection was closing.")
+            # The connection is gone, so we break the loop to end this task safely.
+            break # <--- ADDED: Safely exit the loop
+
+        except Exception as e: # <--- ADDED: Catch any other potential errors
+            helpers.logger.error(f"An unexpected error occurred in handle_commands: {e}")
+            break # <--- ADDED: Safely exit the loop
+            
         websocket_command_queue.task_done()
 
 async def start_websocket_client(manager, semaphore: asyncio.Semaphore):

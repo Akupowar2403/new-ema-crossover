@@ -16,21 +16,74 @@ function startLiveClock() {
     }, 1000);
 }
 
-function getTrendStrengthClass(status, bars) {
-    if (status === 'Bullish') {
-        if (bars >= 0 && bars <= 10) return 'bullish-1';
-        if (bars >= 11 && bars <= 40) return 'bullish-2';
-        if (bars >= 41 && bars <= 60) return 'bullish-3';
-        if (bars > 60) return 'bullish-4';
-    } 
-    else if (status === 'Bearish') {
-        if (bars >= 0 && bars <= 10) return 'bearish-1';
-        if (bars >= 11 && bars <= 40) return 'bearish-2';
-        if (bars >= 41 && bars <= 60) return 'bearish-3';
-        if (bars > 60) return 'bearish-4';
-    }
-    return 'neutral';
+function interpolateColor(color1, color2, factor) {
+    const result = color1.slice(1).match(/.{2}/g)
+        .map((hex, i) => {
+            const val1 = parseInt(hex, 16);
+            const val2 = parseInt(color2.slice(1).match(/.{2}/g)[i], 16);
+            const val = Math.round(val1 + factor * (val2 - val1));
+            return val.toString(16).padStart(2, '0');
+        });
+    return `#${result.join('')}`;
 }
+
+function getDynamicTrendStyle(status, bars) {
+    const bullishStart = '#2E7D32';
+    const bullishEnd = '#E8F5E9';
+    const bearishStart = '#C62828';
+    const bearishEnd = '#FFEBEE';
+    const neutralStyle = { backgroundColor: '#f1fafb', color: '#161c91' };
+
+    if (bars === null || (status !== 'Bullish' && status !== 'Bearish')) {
+        return neutralStyle;
+    }
+
+    const progress = Math.min((bars - 1) / 99, 1);
+
+    if (status === 'Bullish') {
+        const bgColor = interpolateColor(bullishStart, bullishEnd, progress);
+        const textColor = progress > 0.6 ? '#000000' : '#FFFFFF';
+        return { backgroundColor: bgColor, color: textColor };
+    }
+
+    if (status === 'Bearish') {
+        const bgColor = interpolateColor(bearishStart, bearishEnd, progress);
+        const textColor = progress > 0.6 ? '#000000' : '#FFFFFF';
+        return { backgroundColor: bgColor, color: textColor };
+    }
+
+    return neutralStyle;
+}
+
+// --- NEW HELPER FUNCTION ---
+/**
+ * Adds a new row to the screener table with "Loading..." placeholders.
+ * @param {string} symbol - The symbol to add (e.g., "BTCUSD").
+ */
+function addLoadingRowToTable(symbol) {
+    const table = document.getElementById('crypto-table');
+    const tbody = table.querySelector('tbody');
+    if (!tbody || tbody.querySelector(`[data-symbol="${symbol}"]`)) {
+        return; // Do nothing if table body doesn't exist or row is already there
+    }
+
+    const tr = document.createElement('tr');
+    tr.dataset.symbol = symbol;
+
+    let rowContent = `<td class="asset-name clickable" title="Add ${symbol} to Watchlist">${symbol}</td>`;
+    
+    const style = getDynamicTrendStyle('N/A', null); // Get neutral style
+    const inlineStyle = `style="background-color:${style.backgroundColor}; color:${style.color};"`;
+
+    TIME_FRAMES.forEach(() => {
+        rowContent += `<td ${inlineStyle}>Loading...</td>`;
+    });
+    
+    tr.innerHTML = rowContent;
+    tbody.prepend(tr); // Add the new row to the top of the table
+}
+// ----------------------------
+
 
 // --- WEBSOCKET CONNECTION ---
 function connectWebSocket() {
@@ -168,15 +221,15 @@ function updateTableCell(symbol, timeframe, signal) {
     const cell = row.cells[timeframeIndex + 1];
     if (!cell) return;
     
-    // USES THE HELPER FUNCTION TO GET THE CORRECT COLOR CLASS
-    const statusClass = getTrendStrengthClass(signal.status, signal.bars_since);
+    const style = getDynamicTrendStyle(signal.status, signal.bars_since);
+    cell.style.backgroundColor = style.backgroundColor;
+    cell.style.color = style.color;
     
     const barsText = signal.bars_since !== null ? `(${signal.bars_since} bars)` : '';
     const text = signal.status !== "Neutral" && signal.status !== "N/A"
         ? `${signal.status.substring(0, 4)} ${barsText}`
         : signal.status;
 
-    cell.className = statusClass;
     cell.textContent = text;
 }
 
@@ -202,13 +255,13 @@ function populateTable(tableId, assetsData) {
         
         TIME_FRAMES.forEach(tf => {
             const signal = asset.timeframes?.[tf] || { status: 'N/A', bars_since: null };
-            // USES THE HELPER FUNCTION TO GET THE CORRECT COLOR CLASS
-            const statusClass = getTrendStrengthClass(signal.status, signal.bars_since);
+            const style = getDynamicTrendStyle(signal.status, signal.bars_since);
+            const inlineStyle = `style="background-color:${style.backgroundColor}; color:${style.color};"`;
             const barsText = signal.bars_since !== null ? `(${signal.bars_since} bars)` : '';
             const text = signal.status !== "Neutral" && signal.status !== "N/A"
                 ? `${signal.status.substring(0, 4)} ${barsText}`
                 : signal.status;
-            rowContent += `<td class="${statusClass}">${text}</td>`;
+            rowContent += `<td ${inlineStyle}>${text}</td>`;
         });
         tr.innerHTML = rowContent;
         fragment.appendChild(tr);
@@ -227,21 +280,35 @@ function populateSymbolDatalist(symbols) {
     });
 }
 
+// In script.js
+
 function renderWatchlist(symbols) {
     const list = document.getElementById('watchlist-list');
     list.innerHTML = '';
     if (symbols.length === 0) {
-        list.innerHTML = '<li>Your watchlist is empty. Add a symbol above.</li>';
+        list.innerHTML = '<li>Your watchlist is empty.</li>';
         return;
     }
+    
     symbols.forEach(symbol => {
+        // Create the list item
         const li = document.createElement('li');
-        li.textContent = symbol;
+
+        // Create the new '-' remove button
         const removeBtn = document.createElement('button');
-        removeBtn.textContent = 'Remove';
+        removeBtn.textContent = '−'; // Using the minus sign character
         removeBtn.className = 'remove-symbol-btn';
         removeBtn.dataset.symbol = symbol;
+        removeBtn.title = `Remove ${symbol}`; // Add a helpful tooltip
+
+        // Create a span for the symbol name
+        const symbolSpan = document.createElement('span');
+        symbolSpan.textContent = symbol;
+        
+        // Add the button and the name to the list item
         li.appendChild(removeBtn);
+        li.appendChild(symbolSpan);
+
         list.appendChild(li);
     });
 }
@@ -292,7 +359,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);
                 input.value = '';
-                await runDataRefreshCycle();
+                // --- MODIFIED ---
+                // Instantly add a "Loading..." row to the table for immediate feedback
+                addLoadingRowToTable(symbol);
+                // ----------------
             }
         }
     });
@@ -303,7 +373,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const updatedWatchlist = await removeSymbolFromWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);
-                await runDataRefreshCycle();
+                // --- MODIFIED ---
+                // Instantly remove the row from the table for immediate feedback
+                document.querySelector(`#crypto-table tr[data-symbol="${symbol}"]`)?.remove();
+                // ----------------
             }
         }
     });
@@ -314,6 +387,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const updatedWatchlist = await addSymbolToWatchlist(symbol);
             if (updatedWatchlist) {
                 renderWatchlist(updatedWatchlist);
+                 // --- MODIFIED ---
+                // Instantly add a "Loading..." row to the table for immediate feedback
+                addLoadingRowToTable(symbol);
+                // ----------------
             }
         }
     });
