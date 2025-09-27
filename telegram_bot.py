@@ -14,15 +14,9 @@ from telegram.ext import (
     filters,
 )
 
-# --- .env Configuration Loading ---
-from dotenv import load_dotenv
-load_dotenv()
-
-TELEGRAM_ALERTS_ENABLED_STR = os.getenv('TELEGRAM_ALERTS_ENABLED', 'True')
-TELEGRAM_ALERTS_ENABLED = TELEGRAM_ALERTS_ENABLED_STR.lower() in ('true', '1', 't')
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-TELEGRAM_BOT_PIN = os.getenv('TELEGRAM_BOT_PIN')
-# ----------------------------------
+# --- MODIFIED: Import the centralized config file ---
+import config
+# ---------------------------------------------------
 
 # Define the IST timezone
 IST = pytz.timezone('Asia/Kolkata')
@@ -36,8 +30,11 @@ class UserStore:
     def load_users(self):
         if not os.path.exists(self.filepath):
             return {}
-        with open(self.filepath, "r") as f:
-            return json.load(f)
+        try:
+            with open(self.filepath, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            return {}
 
     def save_users(self, users: dict):
         with open(self.filepath, "w") as f:
@@ -68,8 +65,10 @@ class BotLogger:
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
         log_dir = os.path.join("logs", today_str)
         os.makedirs(log_dir, exist_ok=True)
-        print(f"Logging directory: {os.path.abspath(log_dir)}")
+        # print(f"Logging directory: {os.path.abspath(log_dir)}") # Redundant, can be removed if noisy
         logger = logging.getLogger("telegram_bot_logger")
+        if logger.hasHandlers(): # Prevent adding handlers multiple times
+            return logger
         logger.setLevel(logging.DEBUG)
         formatter = logging.Formatter(
             "%(asctime)s | %(levelname)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ"
@@ -103,19 +102,29 @@ class ResponseHandler:
 # ==================== Alert Manager ====================
 class AlertService:
     def __init__(self):
-        self.alerts_enabled = TELEGRAM_ALERTS_ENABLED
-        self.TOKEN = TELEGRAM_BOT_TOKEN
-        self.BASE_URL = f"https://api.telegram.org/bot{self.TOKEN}/sendMessage"
+        # --- MODIFIED: Use variables from config module ---
+        self.alerts_enabled = config.TELEGRAM_ALERTS_ENABLED
+        self.TOKEN = config.TELEGRAM_BOT_TOKEN
+        # ------------------------------------------------
+        if self.TOKEN:
+            self.BASE_URL = f"https://api.telegram.org/bot{self.TOKEN}/sendMessage"
+        else:
+            self.BASE_URL = None
         self.user_store = UserStore()
 
     def send_signal_alert(self, message: str):
         if not self.alerts_enabled:
-            print("[Alert Service] Telegram alerts are disabled.")
+            print("[Alert Service] Telegram alerts are disabled in config.")
             return
+        if not self.BASE_URL:
+            print("[Alert Service] Telegram bot token not set. Cannot send alerts.")
+            return
+
         chat_ids = self.user_store.get_all_user_ids()
         if not chat_ids:
             print("[Alert Service] No users to send alerts to.")
             return
+        
         print(f"[Alert Service] Sending alert to users: {chat_ids}")
         for chat_id in chat_ids:
             try:
@@ -134,7 +143,7 @@ class BotHandlers:
     def __init__(self, user_store, response_handler, pin):
         self.user_store = user_store
         self.response_handler = response_handler
-        self.pin = pin
+        self.pin = str(pin) # Ensure pin is a string for comparison
         self.user_states = {}
         self.bot_logger = BotLogger().logger
     def debug(self, msg: str): self.bot_logger.debug(msg)
@@ -175,12 +184,19 @@ class BotHandlers:
 # ==================== Telegram Bot App ====================
 class TelegramBotApp:
     def __init__(self):
-        self.alerts_enabled = TELEGRAM_ALERTS_ENABLED
+        # --- MODIFIED: Use variables from config module ---
+        self.alerts_enabled = config.TELEGRAM_ALERTS_ENABLED
         self.app = None
+        
         if self.alerts_enabled:
+            token = config.TELEGRAM_BOT_TOKEN
+            pin = config.TELEGRAM_BOT_PIN
+            
+            if not token:
+                print("[Telegram Bot] TELEGRAM_BOT_TOKEN is not set in config/.env. Telegram integration is disabled.")
+                return
+
             print("[Telegram Bot] Initializing Telegram integration.")
-            token = TELEGRAM_BOT_TOKEN
-            pin = TELEGRAM_BOT_PIN
             self.user_store = UserStore()
             self.response_handler = ResponseHandler()
             self.alert_service = AlertService()
@@ -194,7 +210,7 @@ class TelegramBotApp:
             self.app.add_handler(MessageHandler(filters.TEXT, self.bot_handlers.handle_message))
             self.app.add_error_handler(self.bot_handlers.error)
         else:
-            print("[Telegram Bot] Telegram integration is disabled.")
+            print("[Telegram Bot] Telegram integration is disabled via config.")
 
     async def run_in_background(self):
         if self.app:

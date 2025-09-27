@@ -300,3 +300,160 @@ footer {
     color: var(--text-primary);
     text-decoration: underline; /* This adds the line back ONLY on hover */
 }
+
+/* --- NEW: Modern & Aesthetic Settings Page --- */
+#Settings h2 {
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+    margin-bottom: 25px;
+}
+.settings-group {
+    margin-bottom: 35px;
+    border-top: 1px solid #e9ecef;
+    padding-top: 25px;
+}
+.settings-group:first-of-type {
+    border-top: none;
+    padding-top: 0;
+}
+.settings-group h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    font-size: 1.1em;
+    color: var(--accent-color);
+}
+.settings-group p {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+    margin-top: 0;
+}
+.form-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    max-width: 450px;
+}
+.form-row label {
+    font-weight: 500;
+}
+#Settings input[type="number"] {
+    width: 80px;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 1em;
+    text-align: center;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+#Settings input[type="number"]:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(0, 82, 255, 0.1);
+}
+
+/* Custom Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 28px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 28px;
+}
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 20px; width: 20px;
+    left: 4px; bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+input:checked + .slider { background-color: var(--accent-color); }
+input:checked + .slider:before { transform: translateX(22px); }
+
+/* Custom Checkboxes */
+.checkbox-group {
+    display: flex;
+    gap: 25px;
+    flex-wrap: wrap;
+}
+.checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+.checkbox-item input { display: none; }
+.checkbox-item .checkbox-box {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+.checkbox-item .checkbox-box::after {
+    content: '✔';
+    font-size: 14px;
+    color: white;
+    opacity: 0;
+    transform: scale(0);
+    transition: all 0.2s;
+}
+.checkbox-item input:checked + .checkbox-box {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+.checkbox-item input:checked + .checkbox-box::after {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* Save Button */
+#save-settings-button {
+    background-color: #0b286c;
+    color: white;
+    border: none;
+    padding: 12px 25px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+    margin-top: 10px;
+}
+#save-settings-button:hover { background-color: #218838; }
+.feedback-message {
+    margin-top: 15px;
+    color: #29b1bd;
+    font-weight: 500;
+    transition: opacity 0.5s;
+}
+/* In style.css, at the end */
+
+.settings-instructions {
+    max-width: 450px;
+    line-height: 1.6;
+}
+
+.settings-instructions a {
+    color: var(--accent-color);
+    font-weight: 500;
+}
+
+.settings-instructions code {
+    background-color: #e9ecef;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+}

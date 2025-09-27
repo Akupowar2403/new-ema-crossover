@@ -1,11 +1,6 @@
 {
   "symbols": [
-    "AIOUSD",
     "BTCUSD",
-    "DOGEUSD",
-    "ETHUSD",
-    "PUMPUSD",
-    "WLFIUSD",
-    "ZORAUSD"
+    "ETHUSD"
   ]
 }

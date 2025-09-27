@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
-    </head>
+</head>
 <body>
 
     <header>
@@ -21,15 +21,18 @@
     <main class="container">
 
         <nav class="tabs">
-            <div> <button class="tab-link active" data-tab="Crypto">Crypto Screener</button>
+            <div>
+                <button class="tab-link active" data-tab="Crypto">Crypto Screener</button>
                 <button class="tab-link" data-tab="Watchlist">My Watchlist</button>
+                <button class="tab-link" data-tab="Settings">Settings</button>
             </div>
             <a href="https://t.me/SWTSdeltaexchange_bot" target="_blank" class="telegram-nav-link">
                 Notifications : 🔔
             </a>
         </nav>
+
         <section id="Crypto" class="tab-content active">
-            <h2>Crypto Pairs</h2>
+            <h2>Crypto Pairs </h2>
             <table id="crypto-table"></table>
         </section>
 
@@ -43,6 +46,41 @@
             <ul id="watchlist-list">
                 <li>Loading watchlist...</li>
             </ul>
+        </section>
+
+        <section id="Settings" class="tab-content">
+            <h2>⚙️ App Settings</h2>
+
+            <div class="settings-group">
+                <h3>Strategy Settings</h3>
+                <div class="form-row">
+                    <label for="short-ema-input">Short EMA Period</label>
+                    <input id="short-ema-input" type="number" value="9">
+                </div>
+                <div class="form-row">
+                    <label for="long-ema-input">Long EMA Period</label>
+                    <input id="long-ema-input" type="number" value="20">
+                </div>
+            </div>
+            <div class="settings-group">
+                <h3>Notification Settings</h3>
+                <p class="settings-instructions">
+                    Manage your alerts directly in Telegram.
+                    <a href="https://t.me/SWTSdeltaexchange_bot" target="_blank">Open the bot</a>
+                    and use the <code>/link</code> command to subscribe and <code>/unlink</code> to unsubscribe.
+                </p>
+            </div>
+            </div>
+
+            <div class="settings-group">
+                <h3>Display Settings</h3>
+                <p>Select timeframes to display in the screener:</p>
+                <div id="timeframes-selection" class="checkbox-group">
+                    </div>
+            </div>
+
+            <button id="save-settings-button">Save Settings</button>
+            <div id="settings-saved-feedback" class="feedback-message"></div>
         </section>
         
         <section class="alerts-log">
@@ -58,20 +96,17 @@
         <div id="error-message" class="error-container" role="alert"></div>
 
     </main>
-
     
-<footer>
-    <div class="footer-content">
-
-        <p class="designed-by">
-            Developed by <a href="https://www.secretweapon.in/" target="_blank">Secret Weapon Trading Solution Pvt Ltd</a>
-        </p>
-        <p class="copyright">
-            &copy; 2025 All Rights Reserved.
-        </p>
-    </div>
-</footer>
+    <footer>
+        <div class="footer-content">
+            <p class="designed-by">
+                Developed by <a href="https://www.secretweapon.in/" target="_blank">Secret Weapon Trading Solution Pvt Ltd</a>
+            </p>
+            <p class="copyright">
+                &copy; 2025 All Rights Reserved.
+            </p>
+        </div>
+    </footer>
 
 </body>
 </html>
-

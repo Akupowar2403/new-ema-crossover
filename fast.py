@@ -14,13 +14,14 @@ from telegram_bot import TelegramBotApp
 import shared_state
 import os
 
-# --- .env Configuration Loading ---
-from dotenv import load_dotenv
-load_dotenv()
+# --- MODIFIED: Use centralized config file ---
+import config
+# ---------------------------------------------
 
-TIMEFRAMES_STR = os.getenv('TIMEFRAMES', '1m,15m,1h,4h,1d')
-TIMEFRAMES = [tf.strip() for tf in TIMEFRAMES_STR.split(',')]
-# ----------------------------------
+class ScreenerRequest(BaseModel):
+    symbols: Optional[List[str]] = None
+    short_ema: Optional[int] = None
+    long_ema: Optional[int] = None
 
 class ConnectionManager:
     def __init__(self):
@@ -35,30 +36,24 @@ class ConnectionManager:
             await connection.send_text(message)
 
 manager = ConnectionManager()
-
 API_CONCURRENCY_LIMIT = 5
 semaphore = asyncio.Semaphore(API_CONCURRENCY_LIMIT)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Server startup: Initializing services...")
-
     bot_app = TelegramBotApp()
     if bot_app.app:
         shared_state.alert_service = bot_app.alert_service
         telegram_task = asyncio.create_task(bot_app.run_in_background())
-
     websocket_task = asyncio.create_task(websocket_manager.start_websocket_client(manager, semaphore))
-    
     yield
-    
     print("Server shutdown: Stopping background tasks...")
     websocket_task.cancel()
     if bot_app.app and 'telegram_task' in locals():
         telegram_task.cancel()
 
 app = FastAPI(lifespan=lifespan)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5500", "http://localhost:5500"], 
@@ -73,8 +68,13 @@ class SymbolRequest(BaseModel):
 class ScreenerRequest(BaseModel):
     symbols: Optional[List[str]] = None
 
-app.mount("/static", StaticFiles(directory="frontend"), name="static")
+class ScreenerRequest(BaseModel):
+    symbols: Optional[List[str]] = None
+    short_ema: Optional[int] = None
+    long_ema: Optional[int] = None
 
+
+app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -88,27 +88,46 @@ async def websocket_endpoint(websocket: WebSocket):
 # --- API Endpoints ---
 @app.post("/screener_data")
 async def screener_data(request: ScreenerRequest):
-    """
-    Instantly retrieves the latest signal data from the in-memory state.
-    This endpoint is now extremely fast as it does not make any external API calls.
-    """
     symbols_to_scan = request.symbols or helpers.get_current_watchlist()
+    short_period = request.short_ema or config.SHORT_EMA_PERIOD
+    long_period = request.long_ema or config.LONG_EMA_PERIOD
     
+    is_default_ema = (short_period == config.SHORT_EMA_PERIOD and 
+                      long_period == config.LONG_EMA_PERIOD)
+
     response_data = []
-    for symbol in symbols_to_scan:
-        timeframe_signals = {}
-        for tf in TIMEFRAMES:
-            manager_instance = candle_managers_state.get((symbol, tf))
-            
-            if manager_instance and manager_instance.last_signal_state:
-                timeframe_signals[tf] = manager_instance.last_signal_state
-            else:
-                timeframe_signals[tf] = {
-                    "trend": "Loading...", "bars_since_confirmed": None,
-                    "live_status": "N/A", "live_crossover_detected": None
-                }
-        response_data.append({"name": symbol, "timeframes": timeframe_signals})
-    print("--- DATA BEING SENT TO FRONTEND ---", response_data)     
+
+    if is_default_ema:
+        # FAST PATH: For default EMAs, use the live in-memory data.
+        helpers.logger.info("Using fast path: reading from live in-memory state.")
+        for symbol in symbols_to_scan:
+            timeframe_signals = {}
+            for tf in config.TIMEFRAMES:
+                manager_instance = candle_managers_state.get((symbol, tf))
+                if manager_instance and manager_instance.last_signal_state:
+                    timeframe_signals[tf] = manager_instance.last_signal_state
+                else:
+                    timeframe_signals[tf] = { "status": "Loading...", "bars_since": None }
+            response_data.append({"name": symbol, "timeframes": timeframe_signals})
+    else:
+        # ON-DEMAND PATH: For custom EMAs, calculate fresh data.
+        helpers.logger.info(f"Using custom EMA ({short_period}/{long_period}): calculating on-demand.")
+        tasks = []
+        async def fetch_and_analyze(symbol):
+            timeframe_signals = {}
+            for tf in config.TIMEFRAMES:
+                now = int(time.time())
+                df = await helpers.fetch_historical_candles(symbol, tf, 1, now, semaphore)
+                if not df.empty:
+                    timeframe_signals[tf] = helpers.analyze_ema_state(df, short_period, long_period)
+                else:
+                    timeframe_signals[tf] = { "status": "N/A", "bars_since": None }
+            return {"name": symbol, "timeframes": timeframe_signals}
+
+        for symbol in symbols_to_scan:
+            tasks.append(fetch_and_analyze(symbol))
+        response_data = await asyncio.gather(*tasks)
+        
     return {"crypto": response_data}
 
 @app.get("/all-symbols")
@@ -120,24 +139,17 @@ async def get_all_symbols():
 async def get_watchlist():
     return {"symbols": helpers.get_current_watchlist()}
 
-
 @app.post("/watchlist")
 async def add_to_watchlist(request: SymbolRequest):
-    """
-    Validates the symbol against the master list before adding it to the watchlist.
-    """
     all_symbols = await helpers.get_all_symbols_cached()
-
     if request.symbol not in all_symbols:
         raise HTTPException(status_code=400, detail=f"Symbol '{request.symbol}' is not a valid symbol.")
-    
     updated_watchlist = helpers.add_symbol_to_watchlist(request.symbol)
     await websocket_command_queue.put(('subscribe', request.symbol))
     return {"status": "success", "watchlist": updated_watchlist}
 
 @app.delete("/watchlist/{symbol_name}")
 async def delete_from_watchlist(symbol_name: str):
-    """Removes a symbol from the file and sends an 'unsubscribe' command."""
     updated_watchlist = helpers.remove_symbol_from_watchlist(symbol_name)
     await websocket_command_queue.put(('unsubscribe', symbol_name))
     return {"status": "success", "watchlist": updated_watchlist}
@@ -156,24 +168,28 @@ async def latest_signal(symbol: str = Query(...), timeframe: str = Query(...)):
     signal = helpers.analyze_ema_state(df)
     return {"signal": signal}
 
+# --- MODIFIED AS PER OUR PLAN ---
+# This is the only function that needs to change to enable custom EMA analysis.
 @app.get("/historical-crossovers")
 async def historical_crossovers(
     symbol: str = Query(...), 
     timeframe: str = Query(...),
-    confirmation: int = Query(1, ge=0)
+    confirmation: int = Query(1, ge=0),
+    short_ema: int = Query(config.SHORT_EMA_PERIOD),
+    long_ema: int = Query(config.LONG_EMA_PERIOD)
 ):
-    """
-    A "smart" endpoint that finds the 10 most recent confirmed crossovers.
-    It prioritizes live, in-memory data for accuracy and speed.
-    """
     df = None
-    
     manager_instance = candle_managers_state.get((symbol, timeframe))
-    if manager_instance and not manager_instance.candles_df.empty:
+
+    # If the user is requesting the DEFAULT EMA, we can use the fast, live data.
+    if (short_ema == config.SHORT_EMA_PERIOD and 
+        long_ema == config.LONG_EMA_PERIOD and 
+        manager_instance and not manager_instance.candles_df.empty):
+        
         helpers.logger.info(f"Using LIVE data for {symbol}-{timeframe} crossover check.")
         df = manager_instance.candles_df
-
     else:
+        # For ANY custom EMA, we must fetch fresh historical data.
         helpers.logger.info(f"Fetching HISTORICAL data for {symbol}-{timeframe} crossover check.")
         now = int(time.time())
         df = await helpers.fetch_historical_candles(symbol, timeframe, 1, now, semaphore)
@@ -181,11 +197,12 @@ async def historical_crossovers(
     if df is None or df.empty:
         return {"crossovers": []}
 
-    all_crossovers = helpers.find_all_crossovers(df, confirmation_periods=confirmation)
+    # Pass the custom (or default) EMAs to the calculation function
+    all_crossovers = helpers.find_all_crossovers(df, short_ema, long_ema, confirmation_periods=confirmation)
     
     recent_crossovers = all_crossovers[-10:]
-    
     return {"crossovers": recent_crossovers}
+# --------------------------------
 
 @app.get("/")
 async def read_index():

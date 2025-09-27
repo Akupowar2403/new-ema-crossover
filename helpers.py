@@ -9,14 +9,9 @@ from pathlib import Path
 import asyncio
 from io import StringIO
 
-# --- .env Configuration Loading ---
-import os
-from dotenv import load_dotenv
-load_dotenv()
-
-SHORT_EMA_PERIOD = int(os.getenv('SHORT_EMA_PERIOD', '9'))
-LONG_EMA_PERIOD = int(os.getenv('LONG_EMA_PERIOD', '20'))
-# ----------------------------------
+# --- MODIFIED: Import the centralized config file ---
+import config
+# ---------------------------------------------------
 
 WATCHLIST_FILE = Path("watchlist.json")
 logger = logging.getLogger(__name__)
@@ -60,10 +55,11 @@ async def fetch_historical_candles(symbol: str, resolution: str, start: int, end
     return df
 
 
-def analyze_ema_state(df: pd.DataFrame) -> dict:
+# --- MODIFIED: Function signature now uses defaults from config.py ---
+def analyze_ema_state(df: pd.DataFrame, short_period: int = config.SHORT_EMA_PERIOD, long_period: int = config.LONG_EMA_PERIOD) -> dict:
     """
-    Analyzes candle data and returns a dictionary with keys
-    matching the frontend's expectations ('status', 'bars_since').
+    Analyzes candle data using EMA periods.
+    Defaults are now loaded from the config module.
     """
     analysis = {
         "status": "N/A",
@@ -72,12 +68,12 @@ def analyze_ema_state(df: pd.DataFrame) -> dict:
         "live_crossover_detected": None
     }
 
-    if len(df) < LONG_EMA_PERIOD + 2:
+    if len(df) < long_period + 2:
         return analysis
 
     df = df.copy()
-    df['ema_short'] = df['close'].ewm(span=SHORT_EMA_PERIOD, adjust=False).mean()
-    df['ema_long'] = df['close'].ewm(span=LONG_EMA_PERIOD, adjust=False).mean()
+    df['ema_short'] = df['close'].ewm(span=short_period, adjust=False).mean()
+    df['ema_long'] = df['close'].ewm(span=long_period, adjust=False).mean()
 
     confirmed_crossover_index = None
     for i in range(len(df) - 2, 0, -1):
@@ -96,18 +92,23 @@ def analyze_ema_state(df: pd.DataFrame) -> dict:
     if confirmed_crossover_index is not None:
         analysis["bars_since"] = (len(df) - 2) - confirmed_crossover_index
 
-    last_closed_short, live_short = df['ema_short'].iloc[-2], df['ema_short'].iloc[-1]
-    last_closed_long, live_long = df['ema_long'].iloc[-2], df['ema_long'].iloc[-1]
-    analysis["live_status"] = "Short > Long" if live_short > live_long else "Short < Long"
-    if last_closed_short <= last_closed_long and live_short > live_long:
-        analysis["live_crossover_detected"] = 'Bullish'
-    elif last_closed_short >= last_closed_long and live_short < live_long:
-        analysis["live_crossover_detected"] = 'Bearish'
+    if len(df) >= 2:
+        last_closed_short, live_short = df['ema_short'].iloc[-2], df['ema_short'].iloc[-1]
+        last_closed_long, live_long = df['ema_long'].iloc[-2], df['ema_long'].iloc[-1]
+        analysis["live_status"] = "Short > Long" if live_short > live_long else "Short < Long"
+        if last_closed_short <= last_closed_long and live_short > live_long:
+            analysis["live_crossover_detected"] = 'Bullish'
+        elif last_closed_short >= last_closed_long and live_short < live_long:
+            analysis["live_crossover_detected"] = 'Bearish'
         
     return analysis
 
-def find_all_crossovers(df: pd.DataFrame, short_period: int = 9, long_period: int = 21, confirmation_periods: int = 1) -> list:
-
+# --- MODIFIED: Function signature now uses defaults from config.py ---
+def find_all_crossovers(df: pd.DataFrame, short_period: int = config.SHORT_EMA_PERIOD, long_period: int = config.LONG_EMA_PERIOD, confirmation_periods: int = 1) -> list:
+    """
+    Finds all historical crossovers.
+    Defaults are now loaded from the config module.
+    """
     if len(df) < long_period + confirmation_periods:
         return []
 
@@ -154,6 +155,8 @@ def find_all_crossovers(df: pd.DataFrame, short_period: int = 9, long_period: in
         })
             
     return crossovers
+
+# --- (No changes to the functions below this line) ---
 
 def save_state_to_redis(symbol: str, timeframe: str, df: pd.DataFrame, last_signal_state: dict):
     if not redis_client: return
